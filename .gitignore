@@ -1,0 +1,30 @@
+node_modules
+dist
+*.local
+.env
+.env.*
+!.env.example
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Playwright MCP
+.playwright-mcp/
+
+# Claude Code
+.claude/settings.local.json

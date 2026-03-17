@@ -1,0 +1,170 @@
+/*
+ * Clip-inView Design System - CSS Custom Properties
+ * 모든 디자인 토큰을 CSS 변수로 정의
+ * 참조: docs/design-system.md
+ */
+
+:root {
+  /* ============================================
+   * Background Colors
+   * ============================================ */
+  --cad-bg-app: #1E1F22;
+  --cad-bg-panel: #27292D;
+  --cad-bg-tab: #2B2D31;
+  --cad-bg-input: #1E1F22;
+  --cad-bg-canvas: #1A1A1A;
+  --cad-bg-primary: #1a1a2e;
+  --cad-bg-secondary: #16213e;
+  --cad-bg-viewport: #0a0a0a;
+
+  /* ============================================
+   * Text Colors
+   * ============================================ */
+  --cad-text-primary: #D4D4D4;
+  --cad-text-secondary: #A3A3A3;
+  --cad-text-muted: #737373;
+  --cad-text-accent: #53c1de;
+
+  /* ============================================
+   * Accent Colors
+   * ============================================ */
+  --cad-accent-primary: #3B82F6;
+  --cad-accent-hover: #2563EB;
+  --cad-accent-active-bg: rgba(37, 99, 235, 0.2);
+  --cad-accent-active-text: #60A5FA;
+  --cad-accent-active-border: rgba(59, 130, 246, 0.5);
+  --cad-accent-red: #e94560;
+
+  /* ============================================
+   * Status Colors
+   * ============================================ */
+  --cad-status-success: #4caf50;
+  --cad-status-warning: #ff9800;
+  --cad-status-error: #f44336;
+  --cad-status-info: #53c1de;
+
+  /* ============================================
+   * Border Colors
+   * ============================================ */
+  --cad-border-default: #3E4044;
+  --cad-border-subtle: #2a2a4a;
+  --cad-border-hover: #525560;
+
+  /* ============================================
+   * Interaction Colors
+   * ============================================ */
+  --cad-hover-bg: #323539;
+  --cad-hover-bg-strong: #3E4044;
+
+  /* ============================================
+   * Typography - Font Family
+   * ============================================ */
+  --cad-font-primary: 'Inter', 'Noto Sans KR', sans-serif;
+  --cad-font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  /* ============================================
+   * Typography - Font Size
+   * ============================================ */
+  --cad-text-2xs: 10px;
+  --cad-text-xs: 11px;
+  --cad-text-sm: 12px;
+  --cad-text-base: 13px;
+  --cad-text-md: 14px;
+  --cad-text-lg: 16px;
+  --cad-text-xl: 18px;
+  --cad-text-2xl: 24px;
+
+  /* ============================================
+   * Typography - Font Weight
+   * ============================================ */
+  --cad-font-normal: 400;
+  --cad-font-medium: 500;
+  --cad-font-semibold: 600;
+
+  /* ============================================
+   * Typography - Line Height
+   * ============================================ */
+  --cad-leading-tight: 1.2;
+  --cad-leading-normal: 1.5;
+  --cad-leading-relaxed: 1.75;
+
+  /* ============================================
+   * Spacing (base unit: 4px)
+   * ============================================ */
+  --cad-space-0: 0px;
+  --cad-space-1: 4px;
+  --cad-space-2: 8px;
+  --cad-space-3: 12px;
+  --cad-space-4: 16px;
+  --cad-space-5: 20px;
+  --cad-space-6: 24px;
+  --cad-space-8: 32px;
+  --cad-space-10: 40px;
+
+  /* ============================================
+   * Border Radius
+   * ============================================ */
+  --cad-radius-none: 0px;
+  --cad-radius-sm: 2px;
+  --cad-radius-md: 4px;
+  --cad-radius-lg: 6px;
+  --cad-radius-xl: 8px;
+  --cad-radius-full: 9999px;
+
+  /* ============================================
+   * Shadows
+   * ============================================ */
+  --cad-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --cad-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --cad-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --cad-shadow-xl: 0 8px 32px rgba(0, 0, 0, 0.6);
+
+  /* ============================================
+   * Transitions
+   * ============================================ */
+  --cad-transition-fast: 100ms ease-out;
+  --cad-transition-normal: 150ms ease-out;
+  --cad-transition-slow: 250ms ease-in-out;
+
+  /* ============================================
+   * Z-Index Stack
+   * ============================================ */
+  --cad-z-canvas: 0;
+  --cad-z-panel: 10;
+  --cad-z-toolbar: 20;
+  --cad-z-dropdown: 30;
+  --cad-z-command: 40;
+  --cad-z-modal: 50;
+  --cad-z-toast: 60;
+  --cad-z-tooltip: 70;
+
+  /* ============================================
+   * Icon Sizes
+   * ============================================ */
+  --cad-icon-xs: 12px;
+  --cad-icon-sm: 14px;
+  --cad-icon-md: 16px;
+  --cad-icon-lg: 20px;
+  --cad-icon-xl: 24px;
+
+  /* ============================================
+   * Layout Dimensions
+   * ============================================ */
+  --cad-ribbon-height: 132px;
+  --cad-ribbon-collapsed-height: 64px;
+  --cad-left-toolbar-width: 40px;
+  --cad-properties-width: 280px;
+  --cad-command-height: 36px;
+  --cad-statusbar-height: 24px;
+  --cad-quick-access-height: 32px;
+  --cad-ribbon-tab-height: 32px;
+  --cad-ribbon-panel-height: 96px;
+
+  /* ============================================
+   * Responsive Breakpoints
+   * ============================================ */
+  --cad-bp-minimum: 1280px;
+  --cad-bp-compact: 1024px;
+  --cad-bp-canvas-min-w: 960px;
+  --cad-bp-canvas-min-h: 540px;
+}
