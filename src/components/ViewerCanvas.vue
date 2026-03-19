@@ -4,11 +4,14 @@ import { useAppStore } from '@/stores/app'
 import { useToastStore } from '@/stores/toast'
 import { useLayerStore } from '@/stores/layer'
 import { useMeasurementStore } from '@/stores/measurement'
+import { useMeasurementSettingsStore } from '@/stores/measurementSettings'
 import { useMarkupStore } from '@/stores/markup'
 import { useBomStore } from '@/stores/bom'
 import { useLayoutStore } from '@/stores/layout'
 import { useHistoryStore } from '@/stores/history'
+import { useSettingsStore } from '@/stores/settings'
 import { CadEngine } from '@/services/cadEngine'
+import { convertDwgToDxf } from '@/services/converterClient'
 import {
   validateFileType,
   validateFileSize,
@@ -20,18 +23,20 @@ import MeasurementOverlay from './MeasurementOverlay.vue'
 import MarkupTextInput from './MarkupTextInput.vue'
 import SnapIndicator from './SnapIndicator.vue'
 import GridOverlay from './GridOverlay.vue'
-import MeasurementResultBadge from './MeasurementResultBadge.vue'
-import MeasurementCursorTooltip from './MeasurementCursorTooltip.vue'
+import CrosshairOverlay from './CrosshairOverlay.vue'
 import type { SnapResult, Point2D, MarkupEntity } from '@/types/cad'
 
 const store = useAppStore()
 const toast = useToastStore()
 const layerStore = useLayerStore()
 const measureStore = useMeasurementStore()
+const measureSettings = useMeasurementSettingsStore()
 const markupStore = useMarkupStore()
 const bomStore = useBomStore()
 const layoutStore = useLayoutStore()
 const historyStore = useHistoryStore()
+const settingsStore = useSettingsStore()
+const viewerRoot = ref<HTMLElement | null>(null)
 const canvasContainer = ref<HTMLElement | null>(null)
 const isDragOver = ref(false)
 const isLoading = ref(false)
@@ -39,15 +44,29 @@ const currentSnap = ref<SnapResult | null>(null)
 const markupOverlay = ref<InstanceType<typeof MarkupOverlay> | null>(null)
 const measurementOverlay = ref<InstanceType<typeof MeasurementOverlay> | null>(null)
 const gridOverlay = ref<InstanceType<typeof GridOverlay> | null>(null)
+const crosshairOverlay = ref<InstanceType<typeof CrosshairOverlay> | null>(null)
 const showTextInput = ref(false)
 const textInputPos = ref({ x: 0, y: 0 })
 const isFreehandDrawing = ref(false)
 const freehandPoints = ref<Point2D[]>([])
+const isConverting = ref(false)
+/** 현재 로딩 중인 원본 DWG File — 자동 변환 시 사용 */
+let pendingDwgFile: File | null = null
 
 let engine: CadEngine | null = null
+let resizeObserver: ResizeObserver | null = null
+/** mlightcad mouseMove 이벤트에서 받은 정확한 월드 좌표 (클릭 시 사용) */
+let lastAccurateWorldPos: Point2D = { x: 0, y: 0 }
 
 const isMeasuring = computed(() => measureStore.isActive)
 const isMarkingUp = computed(() => markupStore.isActive)
+
+// --- 좌클릭 드래그 → 팬 상태 추적 ---
+const isPanning = ref(false)
+/** 드래그 판별을 위한 클릭 시작 좌표 */
+let clickStartX = 0
+let clickStartY = 0
+const PAN_DRAG_THRESHOLD = 3
 
 // --- CAD 엔진 초기화 ---
 onMounted(async () => {
@@ -58,9 +77,24 @@ onMounted(async () => {
 
   // 측정 렌더러를 CadEngine에 바인딩
   measureStore.bindEngine(engine)
+  measureStore.setFormatter({
+    formatLength: (v: number) => measureSettings.formatLength(v),
+    formatArea: (v: number) => measureSettings.formatArea(v),
+    formatAngle: (v: number) => measureSettings.formatAngle(v),
+    formatCoordinate: (x: number, y: number) => measureSettings.formatCoordinate(x, y),
+  })
+
+  // 측정 스타일 설정 초기화 및 변경 감시
+  measureStore.setStyle(measureSettings.settings.style)
+  watch(
+    () => measureSettings.settings.style,
+    (style) => measureStore.setStyle(style),
+    { deep: true },
+  )
 
   if (engine.viewer) {
     engine.viewer.onMouseMove = (pos) => {
+      lastAccurateWorldPos = { x: pos.x, y: pos.y }
       store.setCursorPosition(pos.x, pos.y)
       measureStore.setCursorPosition(pos)
 
@@ -77,21 +111,58 @@ onMounted(async () => {
     }
     engine.viewer.onZoomChange = (level) => {
       store.setZoomLevel(level)
-      markupOverlay.value?.render()
-      measurementOverlay.value?.render()
-      gridOverlay.value?.render()
+      // 팬 드래그 중에는 handleMouseMove에서 이미 오버레이 갱신하므로 중복 스킵
+      if (!isPanning.value) {
+        markupOverlay.value?.render()
+        measurementOverlay.value?.render()
+        gridOverlay.value?.render()
+      }
     }
   }
-
-  // 브라우저 네이티브 mousemove로 정확한 화면 좌표 전달 (커서 툴팁용)
-  canvasContainer.value.addEventListener('mousemove', handleNativeMouseMove)
 
   // 선택 이벤트 연결
   if (engine.viewer) {
     engine.viewer.onSelectionChanged = (entityIds) => {
       store.selectedEntityIds = entityIds
     }
+
+    // 문서 품질 경고 — 타입별 알림 분기 + DWG 자동 변환
+    engine.viewer.onDocumentWarning = (warning) => {
+      const msg = warning.suggestion
+        ? `${warning.message}\n${warning.suggestion}`
+        : warning.message
+
+      switch (warning.type) {
+        case 'webgl-context-lost':
+          toast.show(msg, 'error', 0)
+          break
+        case 'empty-document':
+        case 'font-load-failed':
+          toast.show(msg, 'error', 8000)
+          break
+        case 'exploded-text':
+          handleExplodedTextWarning(msg)
+          break
+        case 'missing-fonts':
+        case 'large-file':
+        case 'unsupported-entities':
+          toast.show(msg, 'warning', 6000)
+          break
+        default:
+          toast.show(msg, 'info', 5000)
+      }
+    }
   }
+
+  // 컨테이너 크기 변화 감시 — 속성 패널 토글 등 CSS Grid 변경 시
+  // mlightcad의 autoResize는 window resize만 감지하므로 수동 트리거 필요
+  resizeObserver = new ResizeObserver(() => {
+    engine?.resize()
+  })
+  resizeObserver.observe(canvasContainer.value)
+
+  // 브라우저 기본 줌(Ctrl+휠) 차단 — passive: false 필수
+  viewerRoot.value?.addEventListener('wheel', handleWheel, { passive: false })
 
   window.addEventListener('cad:open-file', handleOpenFileEvent as EventListener)
   window.addEventListener('cad:fit-extents', handleFitExtents)
@@ -111,19 +182,11 @@ watch(() => markupStore.markups.length, (newLen, oldLen) => {
   if (newLen !== oldLen && !historyStore.isRestoring) historyStore.pushState()
 })
 
-// activeTool 변경 시 mlightcad 네이티브 뷰 모드 전환
-watch(() => store.activeTool, (tool) => {
-  if (!engine) return
-  if (tool === 'pan') {
-    engine.setViewMode('pan')
-  } else if (tool === 'select') {
-    engine.setViewMode('select')
-  }
-  // 측정/마크업 모드에서는 selection 모드 유지 (클릭으로 포인트 찍기 위해)
-})
+// mlightcad는 항상 PAN 모드 유지 — SELECTION 모드는 내부적으로 뷰를 변경하여 도면이 사라지는 문제 발생
+// 선택/클릭 처리는 handleCanvasClick에서 자체적으로 수행
 
 onUnmounted(() => {
-  canvasContainer.value?.removeEventListener('mousemove', handleNativeMouseMove)
+  viewerRoot.value?.removeEventListener('wheel', handleWheel)
   window.removeEventListener('cad:open-file', handleOpenFileEvent as EventListener)
   window.removeEventListener('cad:fit-extents', handleFitExtents)
   window.removeEventListener('cad:zoom', handleZoomEvent as EventListener)
@@ -132,6 +195,9 @@ onUnmounted(() => {
   window.removeEventListener('cad:highlight-entities', handleHighlightEntities as EventListener)
   window.removeEventListener('cad:clear-highlight', handleClearHighlight)
   window.removeEventListener('cad:switch-layout', handleSwitchLayout as EventListener)
+  window.removeEventListener('cad:convert-to-dxf', handleConvertToDxf)
+  resizeObserver?.disconnect()
+  resizeObserver = null
   measureStore.unbindEngine()
   engine?.dispose()
   engine = null
@@ -162,6 +228,13 @@ async function loadFile(file: File) {
   if (!validateFileSize(file)) {
     toast.show(`파일 크기가 500MB를 초과합니다: ${file.name}`, 'error')
     return
+  }
+
+  // DWG 파일인 경우 자동 변환을 위해 원본 보관
+  if (file.name.toLowerCase().endsWith('.dwg')) {
+    pendingDwgFile = file
+  } else {
+    pendingDwgFile = null
   }
 
   isLoading.value = true
@@ -199,6 +272,77 @@ async function loadFile(file: File) {
     isLoading.value = false
   }
 }
+
+// --- DWG 텍스트 깨짐 → 자동/수동 DXF 변환 ---
+function handleExplodedTextWarning(msg: string) {
+  if (!settingsStore.isOdaConfigured()) {
+    // ODA 미설정 → 안내 메시지만 표시
+    toast.show(
+      `${msg}\n\n설정에서 ODA File Converter 경로를 지정하면 자동 변환할 수 있습니다.`,
+      'warning',
+      10000,
+    )
+    return
+  }
+
+  if (settingsStore.autoConvert && pendingDwgFile) {
+    // 자동 변환 모드 → 바로 변환 시도
+    toast.show('텍스트 깨짐 감지 — DXF 자동 변환 중...', 'info', 3000)
+    attemptDwgConversion(pendingDwgFile)
+  } else {
+    // 수동 모드 → 변환 안내
+    toast.show(
+      `${msg}\n\n파일 메뉴에서 "DXF로 변환"을 선택하거나, 설정에서 자동 변환을 활성화하세요.`,
+      'warning',
+      10000,
+    )
+  }
+}
+
+/** 백엔드 ODA 서비스를 통해 DWG→DXF 변환 후 자동 로드 */
+async function attemptDwgConversion(dwgFile: File) {
+  if (!engine || isConverting.value) return
+
+  isConverting.value = true
+  isLoading.value = true
+
+  try {
+    const result = await convertDwgToDxf(
+      dwgFile,
+      settingsStore.odaPath,
+      settingsStore.outputVersion,
+    )
+
+    if (result.success && result.file) {
+      toast.show('DXF 변환 성공 — 변환된 파일을 로드합니다.', 'success', 2000)
+      // 변환된 DXF로 다시 로드 (pendingDwgFile을 null로 설정하여 재귀 방지)
+      pendingDwgFile = null
+      await loadFile(result.file)
+    } else {
+      toast.show(
+        `DXF 변환 실패: ${result.error}\n원본 DWG를 그대로 표시합니다.`,
+        'error',
+        8000,
+      )
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '변환 오류'
+    toast.show(`DXF 변환 중 오류: ${message}`, 'error', 8000)
+  } finally {
+    isConverting.value = false
+    isLoading.value = false
+  }
+}
+
+// 외부에서 수동 변환 트리거 가능
+function handleConvertToDxf() {
+  if (pendingDwgFile) {
+    attemptDwgConversion(pendingDwgFile)
+  } else {
+    toast.show('현재 열린 DWG 파일이 없습니다.', 'info', 3000)
+  }
+}
+window.addEventListener('cad:convert-to-dxf', handleConvertToDxf)
 
 // --- 이벤트 핸들러 ---
 function handleOpenFileEvent(event: CustomEvent<File>) {
@@ -261,11 +405,6 @@ function handleSwitchLayout(event: CustomEvent<string>) {
     measurementOverlay.value?.render()
     gridOverlay.value?.render()
   }
-}
-
-// --- 브라우저 네이티브 마우스 이벤트 (정확한 화면 좌표) ---
-function handleNativeMouseMove(event: MouseEvent) {
-  measureStore.setScreenCursorPosition({ x: event.clientX, y: event.clientY })
 }
 
 // Pan/Zoom 후 오버레이 재렌더링은 viewChanged 이벤트에서 처리
@@ -382,7 +521,12 @@ function handleCanvasClick(event: MouseEvent) {
   if (!engine) return
   if (event.shiftKey || event.altKey) return
 
-  const worldPos = engine.getWorldCoords(event.clientX, event.clientY)
+  // 드래그 팬 후 클릭 무시
+  const dragDist = Math.hypot(event.clientX - clickStartX, event.clientY - clickStartY)
+  if (dragDist >= PAN_DRAG_THRESHOLD) return
+
+  // mlightcad mouseMove에서 받은 정확한 월드 좌표 사용
+  const worldPos = { ...lastAccurateWorldPos }
   let point = currentSnap.value ? currentSnap.value.point : worldPos
 
   // 선택 모드에서 마크업 히트 테스트
@@ -432,7 +576,7 @@ function handleCanvasClick(event: MouseEvent) {
 }
 
 function handleCanvasDblClick() {
-  if (isMeasuring.value && measureStore.activeMeasureMode === 'area') {
+  if (isMeasuring.value && measureStore.activeMeasureMode === 'area' && measureStore.currentPoints.length >= 3) {
     measureStore.completeMeasurement()
   }
 }
@@ -448,30 +592,78 @@ function handleTextCancel() {
   showTextInput.value = false
 }
 
-// --- 자유곡선 마우스 이벤트 ---
+// --- 마우스 이벤트 (자유곡선 + 좌클릭 드래그 팬) ---
 function handleMouseDown(event: MouseEvent) {
-  if (!engine || markupStore.activeMarkupType !== 'freehand') return
+  if (!engine) return
   if (event.button !== 0) return // 좌클릭만
-  const worldPos = engine.getWorldCoords(event.clientX, event.clientY)
-  isFreehandDrawing.value = true
-  freehandPoints.value = [worldPos]
+
+  // 자유곡선 모드
+  if (markupStore.activeMarkupType === 'freehand') {
+    const worldPos = { ...lastAccurateWorldPos }
+    isFreehandDrawing.value = true
+    freehandPoints.value = [worldPos]
+    return
+  }
+
+  // 좌클릭 드래그 → 팬 상태 추적 준비 (측정/마크업 모드가 아닐 때)
+  clickStartX = event.clientX
+  clickStartY = event.clientY
 }
 
 function handleMouseMove(event: MouseEvent) {
-  if (!engine || !isFreehandDrawing.value) return
-  const worldPos = engine.getWorldCoords(event.clientX, event.clientY)
-  freehandPoints.value.push(worldPos)
-  markupOverlay.value?.render()
+  if (!engine) return
+
+  // 십자 커서 위치 업데이트
+  crosshairOverlay.value?.updatePosition(event)
+
+  // 자유곡선 드래그
+  if (isFreehandDrawing.value) {
+    const worldPos = { ...lastAccurateWorldPos }
+    freehandPoints.value.push(worldPos)
+    markupOverlay.value?.render()
+    return
+  }
+
+  // 좌클릭 드래그 → 팬 상태 추적 (측정/마크업이 아닐 때만)
+  // mlightcad PAN 모드가 자체적으로 뷰를 이동하므로 engine.pan() 호출은 하지 않음
+  // (이중 팬 방지 — 커스텀 pan + mlightcad 내장 pan이 동시 적용되면 뷰가 이탈함)
+  if (event.buttons === 1 && !isMeasuring.value && !isMarkingUp.value) {
+    const dx = event.clientX - clickStartX
+    const dy = event.clientY - clickStartY
+    if (!isPanning.value && Math.hypot(dx, dy) >= PAN_DRAG_THRESHOLD) {
+      isPanning.value = true
+    }
+    if (isPanning.value) {
+      // 오버레이 갱신은 mlightcad viewChanged 이벤트에서 처리됨
+      // 단, 팬 중 빠른 갱신이 필요한 오버레이만 여기서 추가 갱신
+      markupOverlay.value?.render()
+      measurementOverlay.value?.render()
+    }
+  }
 }
 
 function handleMouseUp() {
-  if (!isFreehandDrawing.value) return
-  isFreehandDrawing.value = false
-  if (freehandPoints.value.length >= 2) {
-    markupStore.completeFreehand(freehandPoints.value)
+  if (isFreehandDrawing.value) {
+    isFreehandDrawing.value = false
+    if (freehandPoints.value.length >= 2) {
+      markupStore.completeFreehand(freehandPoints.value)
+    }
+    freehandPoints.value = []
+    markupOverlay.value?.render()
   }
-  freehandPoints.value = []
-  markupOverlay.value?.render()
+  if (isPanning.value) {
+    isPanning.value = false
+    // 팬 종료 시 그리드 오버레이 갱신 (팬 중에는 성능상 스킵)
+    gridOverlay.value?.render()
+  }
+  isPanning.value = false
+}
+
+/** 브라우저 기본 줌(Ctrl+휠) 차단 — CAD 뷰어만 줌되어야 한다 */
+function handleWheel(event: WheelEvent) {
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault()
+  }
 }
 
 function getScreenCoords(worldX: number, worldY: number): Point2D {
@@ -501,8 +693,14 @@ function handleDrop(event: DragEvent) {
 
 <template>
   <div
+    ref="viewerRoot"
     class="viewer-root"
-    :class="{ 'viewer-root--measuring': isMeasuring, 'viewer-root--marking': isMarkingUp }"
+    :class="{
+      'viewer-root--measuring': isMeasuring,
+      'viewer-root--marking': isMarkingUp,
+      'viewer-root--panning': isPanning,
+      'viewer-root--file-loaded': store.isFileLoaded,
+    }"
     @dragover="handleDragOver"
     @dragleave="handleDragLeave"
     @drop="handleDrop"
@@ -511,8 +709,16 @@ function handleDrop(event: DragEvent) {
     @mousedown="handleMouseDown"
     @mousemove="handleMouseMove"
     @mouseup="handleMouseUp"
+    @mouseleave="crosshairOverlay?.hide()"
   >
     <div ref="canvasContainer" class="canvas-container" />
+
+    <!-- 정밀 십자 커서 오버레이 -->
+    <CrosshairOverlay
+      ref="crosshairOverlay"
+      :active="isMeasuring || isMarkingUp"
+      :snapped="currentSnap !== null"
+    />
 
     <!-- 그리드 오버레이 -->
     <GridOverlay
@@ -541,12 +747,6 @@ function handleDrop(event: DragEvent) {
       @submit="handleTextSubmit"
       @cancel="handleTextCancel"
     />
-
-    <!-- 측정 커서 툴팁 -->
-    <MeasurementCursorTooltip />
-
-    <!-- 측정 결과 배지 -->
-    <MeasurementResultBadge />
 
     <!-- 스냅 인디케이터 -->
     <SnapIndicator
@@ -627,9 +827,26 @@ function handleDrop(event: DragEvent) {
   overflow: hidden;
 }
 
+/* 파일 로드 후 기본: grab 커서 (드래그 팬 유도) */
+.viewer-root--file-loaded {
+  cursor: grab;
+}
+
+/* 드래그 팬 중: grabbing */
+.viewer-root--panning {
+  cursor: grabbing !important;
+}
+
+/* 측정/마크업 모드: 시스템 커서 완전 숨김 → CrosshairOverlay가 전체 뷰포트 십자선 표시 */
 .viewer-root--measuring,
 .viewer-root--marking {
-  cursor: crosshair;
+  cursor: none !important;
+}
+
+/* mlightcad 캔버스 포함 모든 자식 요소의 커서도 숨김 (:deep으로 scoped 범위 관통) */
+.viewer-root--measuring :deep(*),
+.viewer-root--marking :deep(*) {
+  cursor: none !important;
 }
 
 .canvas-container {

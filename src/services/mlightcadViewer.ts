@@ -5,10 +5,10 @@
  * ICadViewer 인터페이스를 실제 CAD 엔진에 연결한다.
  */
 
-import { AcApDocManager, AcEdViewMode } from '@mlightcad/cad-simple-viewer'
+import { AcApDocManager } from '@mlightcad/cad-simple-viewer'
 import type { AcDbLayerTableRecord } from '@mlightcad/data-model'
-import { AcDbLine, AcDbArc, AcDbText, AcDbPolyline, AcCmColor } from '@mlightcad/data-model'
-import type { Point2D, Layer, CadEntity, SnapType, SnapResult, ICadViewer, LayoutInfo } from '@/types/cad'
+import { AcDbLine, AcDbArc, AcDbPolyline, AcCmColor } from '@mlightcad/data-model'
+import type { Point2D, Layer, CadEntity, SnapType, SnapResult, ICadViewer, LayoutInfo, DocumentWarning } from '@/types/cad'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyPoint = any
@@ -62,6 +62,7 @@ export class MlightcadViewer implements ICadViewer {
   onZoomChange?: (level: number) => void
   onSelectionChanged?: (entityIds: string[]) => void
   onLayoutChanged?: (name: string) => void
+  onDocumentWarning?: (warning: DocumentWarning) => void
 
   // ─── 초기화 ───
 
@@ -83,11 +84,14 @@ export class MlightcadViewer implements ICadViewer {
 
     this._docManager = mgr
 
-    // 기본 폰트 로드 (실패해도 뷰잉 가능)
+    // 유니코드 지원 TTF 폰트만 프리로드 — SHX는 로드하지 않아서
+    // DWG의 txt.shx 요청 시 자동으로 defaultFont(simkai)로 폴백되게 함
+    // simkai는 CJK + 라틴 + 특수문자 모두 지원
     try {
-      await mgr.loadDefaultFonts()
+      await mgr.loadDefaultFonts(['simkai'])
+      console.log('[MlightcadViewer] 기본 폰트(simkai) 로드 완료')
     } catch (e) {
-      console.warn('[MlightcadViewer] 기본 폰트 로드 실패 (무시):', e)
+      console.warn('[MlightcadViewer] 폰트 로드 실패:', e)
     }
 
     // mouseMove 이벤트 연결 — 월드 좌표 실시간 전달
@@ -100,7 +104,10 @@ export class MlightcadViewer implements ICadViewer {
       this.onZoomChange?.(this.getZoomLevel())
     })
 
-    console.log('[MlightcadViewer] 초기화 완료')
+    // WebGL context lost 감지 — 대용량 도면에서 GPU 메모리 부족 시 사용자 알림
+    this._setupWebGLMonitoring()
+
+    if (import.meta.env.DEV) console.debug('[MlightcadViewer] 초기화 완료')
   }
 
   // ─── 파일 로드 ───
@@ -117,6 +124,12 @@ export class MlightcadViewer implements ICadViewer {
 
       if (success) {
         this._fileLoaded = true
+
+        // 문서에서 필요한데 로드되지 않은 폰트 감지 후 동적 로드 + regen
+        await this._loadMissedFonts()
+
+        // 문서 품질 분석 — DWG 텍스트 깨짐 등 사용자에게 경고
+        this._analyzeDocument(file.name)
 
         // mouseMove/viewChanged 이벤트 재등록 (openDocument로 뷰가 재생성될 수 있음)
         this._rebindViewEvents()
@@ -146,8 +159,11 @@ export class MlightcadViewer implements ICadViewer {
       // 현재 뷰 중심을 화면 좌표 기준으로 이동
       const center = view.worldToScreen(view.center)
       const newCenter = view.screenToWorld({ x: center.x - dx, y: center.y - dy })
+      // NaN/Infinity 보호 — 캔버스 크기 0 등으로 좌표 변환 실패 시 뷰 상태 보존
+      if (!isFinite(newCenter.x) || !isFinite(newCenter.y)) return
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(view as any).center = { x: newCenter.x, y: newCenter.y }
+      view.isDirty = true
     } catch (err) {
       console.warn('[MlightcadViewer] pan 실패:', err)
     }
@@ -158,10 +174,15 @@ export class MlightcadViewer implements ICadViewer {
     // 프로그래밍 방식 줌은 zoomTo로 구현 가능
   }
 
-  setViewMode(mode: 'select' | 'pan'): void {
-    if (!this._docManager) return
-    const view = this._docManager.curView
-    view.mode = mode === 'pan' ? AcEdViewMode.PAN : AcEdViewMode.SELECTION
+  resize(): void {
+    // mlightcad의 autoResize는 window resize 이벤트만 감지하므로
+    // CSS Grid 레이아웃 변경 시 수동으로 이벤트를 디스패치하여 캔버스 리사이즈를 트리거한다
+    window.dispatchEvent(new Event('resize'))
+  }
+
+  setViewMode(_mode: 'select' | 'pan'): void {
+    // mlightcad는 항상 PAN 모드 유지 — SELECTION 모드는 내부적으로 캔버스를 DOM에서 분리하여
+    // 도면이 사라지는 버그를 유발함. 선택/클릭은 ViewerCanvas에서 자체 처리.
   }
 
   getZoomLevel(): number {
@@ -399,21 +420,9 @@ export class MlightcadViewer implements ICadViewer {
     }
   }
 
-  addMeasurementText(id: string, position: Point2D, text: string, height = 3, color = '#60A5FA'): void {
-    if (!this._docManager || !this._fileLoaded) return
-    try {
-      const textEntity = new AcDbText()
-      textEntity.textString = text
-      textEntity.position = pt3(position)
-      textEntity.height = height
-      textEntity.color = hexToAcCmColor(color)
-      const view = this._docManager.curView
-      view.addTransientEntity(textEntity)
-      view.isDirty = true
-      this._trackEntity(id, textEntity.objectId)
-    } catch (err) {
-      console.error('[MlightcadViewer] addMeasurementText 오류:', err)
-    }
+  addMeasurementText(_id: string, _position: Point2D, _text: string, _height = 3, _color = '#60A5FA'): void {
+    // AcDbText transient entity는 textStyle 미설정으로 항상 실패
+    // → 텍스트는 Canvas2D MeasurementOverlay에서 렌더링
   }
 
   addMeasurementPolygon(id: string, points: Point2D[], color = '#3B82F6'): void {
@@ -473,6 +482,127 @@ export class MlightcadViewer implements ICadViewer {
   }
 
   // ─── private ───
+
+  /** 문서 로드 후 누락된 폰트를 감지하여 CDN에서 추가 로드 → regen으로 재렌더링 */
+  private async _loadMissedFonts(): Promise<void> {
+    if (!this._docManager) return
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const missed = (this._docManager as any).missedFonts as Record<string, number> | undefined
+      if (!missed) return
+      const fontNames = Object.keys(missed).filter(f => f && missed[f]! > 0)
+      if (fontNames.length === 0) {
+        if (import.meta.env.DEV) console.debug('[MlightcadViewer] 누락 폰트 없음')
+        return
+      }
+
+      if (import.meta.env.DEV) console.debug(`[MlightcadViewer] 누락 폰트 감지: ${fontNames.join(', ')}`)
+
+      try {
+        await this._docManager.loadDefaultFonts(fontNames)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(this._docManager as any).regen?.()
+
+        // 폰트 로드 성공했지만 사용자에게 fallback 폰트 사용 중임을 알림
+        this.onDocumentWarning?.({
+          type: 'missing-fonts',
+          message: `도면에서 사용하는 폰트(${fontNames.join(', ')})가 시스템에 없어 대체 폰트로 표시됩니다.`,
+          suggestion: '글꼴 모양이 원본과 다를 수 있습니다.',
+        })
+      } catch (fontErr) {
+        if (import.meta.env.DEV) console.warn('[MlightcadViewer] 폰트 로드 실패:', fontErr)
+        this.onDocumentWarning?.({
+          type: 'font-load-failed',
+          message: `폰트(${fontNames.join(', ')}) 로드에 실패했습니다.`,
+          suggestion: '텍스트가 기본 폰트로 표시되며, 일부 글자가 깨질 수 있습니다.',
+        })
+      }
+    } catch (e) {
+      if (import.meta.env.DEV) console.warn('[MlightcadViewer] 폰트 분석 실패:', e)
+    }
+  }
+
+  /**
+   * 문서 품질 종합 분석 — 잠재적 문제를 감지하여 사용자에게 사전 경고.
+   *
+   * 감지 항목:
+   * 1. Exploded text: DWG에서 TEXT/MTEXT 없이 LINE만 있으면 텍스트 깨짐 가능
+   * 2. Empty document: 엔티티가 하나도 없는 빈 도면
+   * 3. Large file: 엔티티 수가 매우 많으면 성능 저하 가능
+   */
+  private _analyzeDocument(fileName: string): void {
+    if (!this._docManager) return
+    try {
+      const db = this._docManager.curDocument.database
+      const isDwg = fileName.toLowerCase().endsWith('.dwg')
+
+      const modelSpace = db.tables.blockTable.modelSpace
+      if (!modelSpace) return
+
+      let hasTextEntities = false
+      let totalEntities = 0
+      for (const entity of modelSpace.newIterator()) {
+        totalEntities++
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const e = entity as any
+        if (!hasTextEntities && (e.textString || e.contents || e.text)) {
+          hasTextEntities = true
+        }
+        // 대용량 판별을 위해 계속 카운트 (break하지 않음)
+      }
+
+      if (import.meta.env.DEV) {
+        console.debug(`[MlightcadViewer] 문서 분석: ${totalEntities}개 엔티티, TEXT=${hasTextEntities}, format=${isDwg ? 'DWG' : 'DXF'}`)
+      }
+
+      // ① 빈 도면 감지
+      if (totalEntities === 0) {
+        this.onDocumentWarning?.({
+          type: 'empty-document',
+          message: '이 파일에 표시할 도면 데이터가 없습니다.',
+          suggestion: '파일이 손상되었거나 빈 템플릿일 수 있습니다. 다른 파일을 열어보세요.',
+        })
+        return // 빈 도면이면 추가 분석 불필요
+      }
+
+      // ② DWG exploded text 감지
+      if (isDwg && !hasTextEntities && totalEntities > 100) {
+        this.onDocumentWarning?.({
+          type: 'exploded-text',
+          message: '이 DWG 파일의 텍스트가 깨져 보일 수 있습니다.',
+          suggestion: 'ODA File Converter로 DXF 형식으로 변환하면 텍스트가 정상적으로 표시됩니다.',
+        })
+      }
+
+      // ③ 대용량 파일 성능 경고
+      const LARGE_ENTITY_THRESHOLD = 100_000
+      if (totalEntities > LARGE_ENTITY_THRESHOLD) {
+        this.onDocumentWarning?.({
+          type: 'large-file',
+          message: `대용량 도면입니다 (엔티티 ${totalEntities.toLocaleString()}개). 조작이 느릴 수 있습니다.`,
+          suggestion: '확대하여 부분적으로 작업하면 성능이 개선됩니다.',
+        })
+      }
+    } catch (e) {
+      if (import.meta.env.DEV) console.warn('[MlightcadViewer] 문서 분석 실패:', e)
+    }
+  }
+
+  /** WebGL context lost 이벤트 감지 — GPU 메모리 부족 시 사용자에게 경고 */
+  private _setupWebGLMonitoring(): void {
+    if (!this._container) return
+    const canvas = this._container.querySelector('canvas')
+    if (!canvas) return
+
+    canvas.addEventListener('webglcontextlost', (event) => {
+      event.preventDefault()
+      this.onDocumentWarning?.({
+        type: 'webgl-context-lost',
+        message: '그래픽 렌더링이 중단되었습니다 (GPU 메모리 부족).',
+        suggestion: '다른 탭을 닫거나 페이지를 새로고침해 주세요.',
+      })
+    })
+  }
 
   private _rebindViewEvents(): void {
     if (!this._docManager) return

@@ -135,6 +135,20 @@ export interface FileInfo {
   lastModified: number
 }
 
+/** 문서 로드 후 감지된 경고 — 사용자에게 알림 표시용 */
+export interface DocumentWarning {
+  type:
+    | 'exploded-text'       // DWG 텍스트가 LINE으로 explode됨
+    | 'missing-fonts'       // 도면에 필요한 폰트 누락 (fallback 사용 중)
+    | 'empty-document'      // 엔티티가 없는 빈 도면
+    | 'large-file'          // 대용량 파일 성능 경고
+    | 'webgl-context-lost'  // GPU 메모리 부족으로 WebGL 컨텍스트 소실
+    | 'font-load-failed'    // 폰트 로드 실패
+    | 'unsupported-entities' // 지원하지 않는 엔티티 타입
+  message: string
+  suggestion?: string
+}
+
 /** CAD 뷰어 인터페이스 — 실제 엔진이나 스텁이 이 인터페이스를 구현 */
 export interface ICadViewer {
   initialize(container: HTMLElement): Promise<void>
@@ -145,6 +159,8 @@ export interface ICadViewer {
   getZoomLevel(): number
   getWorldCoords(screenX: number, screenY: number): Point2D
   getScreenCoords(worldX: number, worldY: number): Point2D
+  /** 컨테이너 크기 변경 시 캔버스 리사이즈 트리거 */
+  resize(): void
   dispose(): void
   onMouseMove?: (worldPos: Point2D) => void
   onZoomChange?: (level: number) => void
@@ -169,6 +185,9 @@ export interface ICadViewer {
   switchLayout(name: string): boolean
   getCurrentLayoutName(): string
   onLayoutChanged?: (name: string) => void
+
+  // 문서 품질 경고 콜백
+  onDocumentWarning?: (warning: DocumentWarning) => void
 
   // M2: 엔진 내장 측정 렌더링 (transient entity 기반)
   addMeasurementLine(id: string, p1: Point2D, p2: Point2D, color?: string): void
