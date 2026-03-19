@@ -14,7 +14,26 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
-# ─── Stage 2: Serve ───
+# ─── Stage 2: Backend API (변환 서비스) ───
+FROM node:22-alpine AS backend
+
+WORKDIR /app
+
+# pnpm 설치
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# 서버 의존성만 설치
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --prod
+
+# 서버 코드 복사
+COPY server/ ./server/
+
+EXPOSE 3001
+
+CMD ["npx", "tsx", "server/index.ts"]
+
+# ─── Stage 3: Nginx (프론트엔드 정적 서빙) ───
 FROM nginx:1.27-alpine AS production
 
 # 보안: 불필요한 기본 설정 제거

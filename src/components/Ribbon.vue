@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useHistoryStore } from '@/stores/history'
 import { useMeasurementStore } from '@/stores/measurement'
 import { useMarkupStore } from '@/stores/markup'
+import { useSettingsStore } from '@/stores/settings'
 import {
   Undo2Icon,
   Redo2Icon,
@@ -11,12 +13,17 @@ import {
   PrinterIcon,
   Maximize2Icon,
   ShieldCheckIcon,
+  RefreshCwIcon,
+  SettingsIcon,
 } from 'lucide-vue-next'
+import ConverterSettingsDialog from './ConverterSettingsDialog.vue'
 
 const store = useAppStore()
 const historyStore = useHistoryStore()
 const measureStore = useMeasurementStore()
 const markupStore = useMarkupStore()
+const settingsStore = useSettingsStore()
+const showConverterSettings = ref(false)
 
 function handleOpenFile() {
   const input = document.createElement('input')
@@ -106,6 +113,22 @@ function handleSaveMarkup() {
         >
           <PrinterIcon :size="13" :stroke-width="1.5" />
         </button>
+        <div class="qa-divider" />
+        <button
+          class="qa-btn"
+          title="DXF로 변환 — ODA File Converter로 DWG를 DXF로 변환합니다"
+          :disabled="!store.isFileLoaded || !store.currentFile?.toLowerCase().endsWith('.dwg')"
+          @click="window.dispatchEvent(new CustomEvent('cad:convert-to-dxf'))"
+        >
+          <RefreshCwIcon :size="13" :stroke-width="1.5" />
+        </button>
+        <button
+          class="qa-btn"
+          title="변환 설정"
+          @click="showConverterSettings = true"
+        >
+          <SettingsIcon :size="13" :stroke-width="1.5" />
+        </button>
       </div>
 
       <div class="titlebar-divider" />
@@ -150,6 +173,14 @@ function handleSaveMarkup() {
       </div>
       <span class="titlebar-version">v1.0</span>
     </div>
+
+    <!-- ODA 변환 설정 다이얼로그 -->
+    <Teleport to="body">
+      <ConverterSettingsDialog
+        v-if="showConverterSettings"
+        @close="showConverterSettings = false"
+      />
+    </Teleport>
   </header>
 </template>
 

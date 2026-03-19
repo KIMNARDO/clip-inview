@@ -112,6 +112,11 @@ function isExternalUrl(url: string): boolean {
       return false
     }
 
+    // mlightcad 폰트/데이터 서버는 CAD 엔진 필수 리소스 — 허용
+    if (parsed.hostname === 'mlightcad.gitlab.io') {
+      return false
+    }
+
     return !internalPatterns.includes(parsed.hostname)
   } catch {
     return false
