@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useMeasurementStore } from '@/stores/measurement'
 import { useMarkupStore } from '@/stores/markup'
+import { useHistoryStore } from '@/stores/history'
 import { useKeyboard } from '@/composables/useKeyboard'
 import { openFileDialog, validateFileType } from '@/utils/fileLoader'
 import Ribbon from './Ribbon.vue'
@@ -12,16 +13,17 @@ import PropertiesPanel from './PropertiesPanel.vue'
 import LayerPanel from './LayerPanel.vue'
 import BomPanel from './BomPanel.vue'
 import CommandPalette from './CommandPalette.vue'
+import LayoutTabs from './LayoutTabs.vue'
 import StatusBar from './StatusBar.vue'
 import ToastContainer from './ToastContainer.vue'
 
 const store = useAppStore()
 const measureStore = useMeasurementStore()
 const markupStore = useMarkupStore()
+const historyStore = useHistoryStore()
 
 const layoutClass = computed(() => ({
   'app-layout': true,
-  'app-layout--ribbon-collapsed': store.isRibbonCollapsed,
   'app-layout--no-properties': !store.isPropertiesPanelOpen && !store.isLayerPanelOpen && !store.isBomPanelOpen,
 }))
 
@@ -36,6 +38,14 @@ useKeyboard({
   'Ctrl+O': (e) => {
     e.preventDefault()
     handleOpenFile()
+  },
+  'Ctrl+Z': (e) => {
+    e.preventDefault()
+    historyStore.undo()
+  },
+  'Ctrl+Y': (e) => {
+    e.preventDefault()
+    historyStore.redo()
   },
   'HOME': () => {
     window.dispatchEvent(new CustomEvent('cad:fit-extents'))
@@ -66,10 +76,47 @@ useKeyboard({
       store.setActiveTool('select')
     }
   },
+  'S': () => {
+    if (!measureStore.isActive && !markupStore.isActive) {
+      store.setActiveTool('select')
+    }
+  },
+  'P': () => {
+    if (!measureStore.isActive && !markupStore.isActive) {
+      store.setActiveTool('pan')
+    }
+  },
+  'Z': () => {
+    if (!measureStore.isActive && !markupStore.isActive) {
+      store.setActiveTool('zoom-window')
+    }
+  },
   'D': () => {
-    if (!measureStore.isActive) {
+    if (!measureStore.isActive && !markupStore.isActive) {
       measureStore.setMeasureMode('distance')
       store.setActiveTool('measure-distance')
+    }
+  },
+  'A': () => {
+    if (!measureStore.isActive && !markupStore.isActive) {
+      measureStore.setMeasureMode('area')
+      store.setActiveTool('measure-area')
+    }
+  },
+  'G': () => {
+    store.toggleGrid()
+  },
+  'F3': (e) => {
+    e.preventDefault()
+    store.toggleOsnap()
+  },
+  'F8': (e) => {
+    e.preventDefault()
+    store.toggleOrtho()
+  },
+  'DELETE': () => {
+    if (markupStore.selectedMarkupId) {
+      markupStore.deleteMarkup(markupStore.selectedMarkupId)
     }
   },
 })
@@ -85,37 +132,62 @@ function handleLayerToggleAll(visible: boolean) {
     new CustomEvent('cad:layer-visibility-all', { detail: visible }),
   )
 }
+
+function handleHighlightEntities(entityIds: string[]) {
+  window.dispatchEvent(
+    new CustomEvent('cad:highlight-entities', { detail: entityIds }),
+  )
+}
+
+function handleClearHighlight() {
+  window.dispatchEvent(new CustomEvent('cad:clear-highlight'))
+}
+
+function handleSwitchLayout(name: string) {
+  window.dispatchEvent(new CustomEvent('cad:switch-layout', { detail: name }))
+}
 </script>
 
 <template>
   <div :class="layoutClass" class="bg-[var(--cad-bg-app)]">
-    <Ribbon class="ribbon" @open-file="handleOpenFile" />
+    <Ribbon class="ribbon" />
 
     <LeftToolbar class="left-toolbar" />
 
-    <div class="viewer-canvas relative overflow-hidden">
-      <ViewerCanvas />
-      <CommandPalette
-        v-if="store.isCommandPaletteVisible"
-        class="command-palette"
-      />
+    <div class="viewer-area">
+      <div class="viewer-canvas relative overflow-hidden">
+        <ViewerCanvas />
+        <CommandPalette
+          v-if="store.isCommandPaletteVisible"
+          class="command-palette"
+        />
+      </div>
+      <LayoutTabs @switch-layout="handleSwitchLayout" />
     </div>
 
     <!-- 우측 패널: 속성/레이어/BOM (상호 배타) -->
-    <PropertiesPanel
-      v-if="store.isPropertiesPanelOpen && !store.isLayerPanelOpen && !store.isBomPanelOpen"
-      class="properties-panel"
-    />
-    <LayerPanel
-      v-if="store.isLayerPanelOpen"
-      class="properties-panel"
-      @toggle-visibility="handleLayerToggle"
-      @toggle-all="handleLayerToggleAll"
-    />
-    <BomPanel
-      v-if="store.isBomPanelOpen"
-      class="properties-panel"
-    />
+    <Transition name="panel-slide">
+      <PropertiesPanel
+        v-if="store.isPropertiesPanelOpen && !store.isLayerPanelOpen && !store.isBomPanelOpen"
+        class="properties-panel"
+      />
+    </Transition>
+    <Transition name="panel-slide">
+      <LayerPanel
+        v-if="store.isLayerPanelOpen"
+        class="properties-panel"
+        @toggle-visibility="handleLayerToggle"
+        @toggle-all="handleLayerToggleAll"
+      />
+    </Transition>
+    <Transition name="panel-slide">
+      <BomPanel
+        v-if="store.isBomPanelOpen"
+        class="properties-panel"
+        @highlight-entities="handleHighlightEntities"
+        @clear-highlight="handleClearHighlight"
+      />
+    </Transition>
 
     <StatusBar class="status-bar" />
     <ToastContainer />
@@ -141,10 +213,6 @@ function handleLayerToggleAll(visible: boolean) {
   grid-template-columns: var(--cad-left-toolbar-width) 1fr 0px;
 }
 
-.app-layout--ribbon-collapsed {
-  /* 리본 접힘 시에도 auto로 자연스럽게 줄어듦 */
-}
-
 .ribbon {
   grid-area: ribbon;
 }
@@ -153,8 +221,15 @@ function handleLayerToggleAll(visible: boolean) {
   grid-area: left-tools;
 }
 
-.viewer-canvas {
+.viewer-area {
   grid-area: canvas;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.viewer-canvas {
+  flex: 1;
   position: relative;
 }
 
@@ -174,5 +249,21 @@ function handleLayerToggleAll(visible: boolean) {
   z-index: var(--cad-z-command);
   width: 100%;
   max-width: 560px;
+}
+
+/* ─── 패널 슬라이드 트랜지션 ─── */
+.panel-slide-enter-active {
+  transition: opacity 150ms ease-out, transform 150ms ease-out;
+}
+.panel-slide-leave-active {
+  transition: opacity 100ms ease-in, transform 100ms ease-in;
+}
+.panel-slide-enter-from {
+  opacity: 0;
+  transform: translateX(16px);
+}
+.panel-slide-leave-to {
+  opacity: 0;
+  transform: translateX(8px);
 }
 </style>

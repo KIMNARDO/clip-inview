@@ -1,31 +1,19 @@
 <script setup lang="ts">
 import { useAppStore } from '@/stores/app'
 import { useMeasurementStore } from '@/stores/measurement'
-import { Maximize2Icon } from 'lucide-vue-next'
+import { useMeasurementSettingsStore } from '@/stores/measurementSettings'
 import { formatMeasurement } from '@/utils/measurement'
 
 const store = useAppStore()
 const measureStore = useMeasurementStore()
-
-function toggleFullscreen() {
-  if (document.fullscreenElement) {
-    document.exitFullscreen()
-  } else {
-    document.documentElement.requestFullscreen()
-  }
-}
+const settingsStore = useMeasurementSettingsStore()
 </script>
 
 <template>
   <footer class="statusbar-root">
-    <!-- 왼쪽: 좌표, 활성 도구 -->
+    <!-- 왼쪽: 활성 도구 + 측정값 -->
     <div class="statusbar-left">
       <span class="statusbar-tool">{{ store.activeToolLabel }}</span>
-      <span class="statusbar-divider" />
-      <span class="statusbar-coords" title="월드 좌표">
-        X: {{ store.formattedCoords.x }}
-        Y: {{ store.formattedCoords.y }}
-      </span>
       <template v-if="measureStore.lastMeasurement">
         <span class="statusbar-divider" />
         <span class="statusbar-measure" title="마지막 측정 결과">
@@ -34,53 +22,58 @@ function toggleFullscreen() {
       </template>
     </div>
 
-    <!-- 중앙: 토글 버튼 -->
-    <div class="statusbar-center">
+    <!-- 중앙: 좌표 표시 (강조) -->
+    <div class="statusbar-coords-group">
+      <div class="coord-item">
+        <span class="coord-axis coord-axis--x">X</span>
+        <span class="coord-value">{{ store.formattedCoords.x }}</span>
+      </div>
+      <div class="coord-item">
+        <span class="coord-axis coord-axis--y">Y</span>
+        <span class="coord-value">{{ store.formattedCoords.y }}</span>
+      </div>
+      <span class="statusbar-divider" />
+      <span class="coord-scale" :title="`축척: ${settingsStore.settings.scale.label}`">
+        {{ settingsStore.settings.scale.label }}
+      </span>
+    </div>
+
+    <!-- 오른쪽: 토글 + 줌 -->
+    <div class="statusbar-right">
       <button
-        class="toggle-button"
-        :class="{ 'toggle-button--active': store.isGridEnabled }"
+        class="toggle-btn"
+        :class="{ 'toggle-btn--active': store.isGridEnabled }"
         title="그리드 표시"
         @click="store.toggleGrid()"
       >
         GRID
       </button>
       <button
-        class="toggle-button"
-        :class="{ 'toggle-button--active': store.isSnapEnabled }"
+        class="toggle-btn"
+        :class="{ 'toggle-btn--active': store.isSnapEnabled }"
         title="스냅"
         @click="store.toggleSnap()"
       >
         SNAP
       </button>
       <button
-        class="toggle-button"
-        :class="{ 'toggle-button--active': store.isOrthoEnabled }"
+        class="toggle-btn"
+        :class="{ 'toggle-btn--active': store.isOrthoEnabled }"
         title="직교 모드"
         @click="store.toggleOrtho()"
       >
         ORTHO
       </button>
       <button
-        class="toggle-button"
-        :class="{ 'toggle-button--active': store.isOsnapEnabled }"
+        class="toggle-btn"
+        :class="{ 'toggle-btn--active': store.isOsnapEnabled }"
         title="객체 스냅"
         @click="store.toggleOsnap()"
       >
         OSNAP
       </button>
-    </div>
-
-    <!-- 오른쪽: 줌, 풀스크린 -->
-    <div class="statusbar-right">
-      <span class="statusbar-zoom" title="줌 레벨">{{ store.formattedZoom }}</span>
       <span class="statusbar-divider" />
-      <button
-        class="fullscreen-button"
-        title="전체 화면 (F11)"
-        @click="toggleFullscreen"
-      >
-        <Maximize2Icon :size="12" :stroke-width="1.5" />
-      </button>
+      <span class="statusbar-zoom" title="줌 레벨">{{ store.formattedZoom }}</span>
     </div>
   </footer>
 </template>
@@ -91,7 +84,7 @@ function toggleFullscreen() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--cad-space-2);
+  padding: 0 var(--cad-space-3);
   background: var(--cad-bg-panel);
   border-top: 1px solid var(--cad-border-default);
   font-size: var(--cad-text-2xs);
@@ -100,7 +93,6 @@ function toggleFullscreen() {
 }
 
 .statusbar-left,
-.statusbar-center,
 .statusbar-right {
   display: flex;
   align-items: center;
@@ -109,22 +101,15 @@ function toggleFullscreen() {
 
 .statusbar-tool {
   color: var(--cad-accent-active-text);
-  font-weight: var(--cad-font-medium);
-}
-
-.statusbar-coords {
-  font-family: var(--cad-font-mono);
-  letter-spacing: 0.5px;
+  font-weight: var(--cad-font-semibold);
+  font-size: var(--cad-text-xs);
 }
 
 .statusbar-measure {
   font-family: var(--cad-font-mono);
-  color: var(--cad-accent-active-text);
-  letter-spacing: 0.5px;
-}
-
-.statusbar-zoom {
-  font-family: var(--cad-font-mono);
+  color: #FFD700;
+  font-weight: var(--cad-font-semibold);
+  letter-spacing: 0.3px;
 }
 
 .statusbar-divider {
@@ -133,10 +118,62 @@ function toggleFullscreen() {
   background: var(--cad-border-default);
 }
 
-.toggle-button {
-  padding: 1px var(--cad-space-1);
+/* ─── 좌표 표시 (중앙, 강조) ─── */
+.statusbar-coords-group {
+  display: flex;
+  align-items: center;
+  gap: var(--cad-space-3);
+  padding: 2px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: var(--cad-radius-md);
+  border: 1px solid var(--cad-border-default);
+}
+
+.coord-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.coord-axis {
+  font-size: 9px;
+  font-weight: var(--cad-font-semibold);
+  padding: 1px 4px;
+  border-radius: 2px;
+  line-height: 1;
+}
+
+.coord-axis--x {
+  color: #FF6B6B;
+  background: rgba(255, 107, 107, 0.15);
+}
+
+.coord-axis--y {
+  color: #51CF66;
+  background: rgba(81, 207, 102, 0.15);
+}
+
+.coord-value {
+  font-family: var(--cad-font-mono);
+  font-size: var(--cad-text-xs);
+  color: var(--cad-text-primary);
+  letter-spacing: 0.5px;
+  min-width: 64px;
+  text-align: right;
+}
+
+.coord-scale {
+  font-family: var(--cad-font-mono);
   font-size: var(--cad-text-2xs);
+  color: var(--cad-accent-active-text);
   font-weight: var(--cad-font-medium);
+}
+
+/* ─── 토글 버튼 ─── */
+.toggle-btn {
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: var(--cad-font-semibold);
   color: var(--cad-text-muted);
   background: transparent;
   border: 1px solid transparent;
@@ -146,33 +183,22 @@ function toggleFullscreen() {
   letter-spacing: 0.5px;
 }
 
-.toggle-button:hover {
+.toggle-btn:hover {
   color: var(--cad-text-secondary);
   background: var(--cad-hover-bg);
 }
 
-.toggle-button--active {
+.toggle-btn--active {
   color: var(--cad-accent-active-text);
   background: var(--cad-accent-active-bg);
   border-color: var(--cad-accent-active-border);
 }
 
-.fullscreen-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  color: var(--cad-text-muted);
-  background: transparent;
-  border: none;
-  border-radius: var(--cad-radius-sm);
-  cursor: pointer;
-  transition: all var(--cad-transition-fast);
-}
-
-.fullscreen-button:hover {
+.statusbar-zoom {
+  font-family: var(--cad-font-mono);
+  font-size: var(--cad-text-xs);
   color: var(--cad-text-primary);
-  background: var(--cad-hover-bg);
+  min-width: 40px;
+  text-align: right;
 }
 </style>

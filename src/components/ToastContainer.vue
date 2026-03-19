@@ -1,8 +1,21 @@
 <script setup lang="ts">
 import { useToastStore } from '@/stores/toast'
-import { XIcon } from 'lucide-vue-next'
+import {
+  XIcon,
+  CheckCircle2Icon,
+  AlertTriangleIcon,
+  AlertCircleIcon,
+  InfoIcon,
+} from 'lucide-vue-next'
 
 const toast = useToastStore()
+
+const typeIcons = {
+  success: CheckCircle2Icon,
+  warning: AlertTriangleIcon,
+  error: AlertCircleIcon,
+  info: InfoIcon,
+} as const
 </script>
 
 <template>
@@ -14,6 +27,7 @@ const toast = useToastStore()
         class="toast-item"
         :class="`toast-item--${item.type}`"
       >
+        <component :is="typeIcons[item.type]" :size="16" :stroke-width="1.5" class="toast-icon" />
         <span class="toast-message">{{ item.message }}</span>
         <button class="toast-close" @click="toast.dismiss(item.id)">
           <XIcon :size="14" :stroke-width="1.5" />
@@ -68,6 +82,15 @@ const toast = useToastStore()
   border-color: var(--cad-status-info);
   background: rgba(83, 193, 222, 0.15);
 }
+
+.toast-icon {
+  flex-shrink: 0;
+}
+
+.toast-item--success .toast-icon { color: var(--cad-status-success); }
+.toast-item--warning .toast-icon { color: var(--cad-status-warning); }
+.toast-item--error .toast-icon { color: var(--cad-status-error); }
+.toast-item--info .toast-icon { color: var(--cad-status-info); }
 
 .toast-message {
   flex: 1;

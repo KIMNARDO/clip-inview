@@ -5,7 +5,7 @@
  * 앱 전체에서 일관된 인터페이스로 CAD 기능을 제공한다.
  */
 
-import type { Point2D, FileInfo, ICadViewer, Layer, CadEntity, SnapType, SnapResult, BomData } from '@/types/cad'
+import type { Point2D, FileInfo, ICadViewer, Layer, CadEntity, SnapType, SnapResult, BomData, LayoutInfo } from '@/types/cad'
 import { MlightcadViewer } from './mlightcadViewer'
 
 /** 스텁용 모의 레이어 데이터 */
@@ -105,9 +105,12 @@ export class StubCadViewer implements ICadViewer {
   private _layers: Layer[] = []
   private _entities: CadEntity[] = []
   private _fileLoaded = false
+  private _currentLayout = 'Model'
+  private _layouts: LayoutInfo[] = []
 
   onMouseMove?: (worldPos: Point2D) => void
   onZoomChange?: (level: number) => void
+  onLayoutChanged?: (name: string) => void
 
   async initialize(container: HTMLElement): Promise<void> {
     this._container = container
@@ -143,6 +146,12 @@ export class StubCadViewer implements ICadViewer {
     this._zoomLevel = 100
     this._layers = MOCK_LAYERS.map((l) => ({ ...l }))
     this._entities = createMockEntities()
+    this._layouts = [
+      { name: 'Model', type: 'Model', tabOrder: 0 },
+      { name: 'Layout1', type: 'Paper', tabOrder: 1 },
+      { name: 'Layout2', type: 'Paper', tabOrder: 2 },
+    ]
+    this._currentLayout = 'Model'
     this._fileLoaded = true
     this._render()
     return true
@@ -264,6 +273,34 @@ export class StubCadViewer implements ICadViewer {
 
     return closest
   }
+
+  setViewMode(_mode: 'select' | 'pan'): void { /* stub */ }
+
+  // --- Layout ---
+  getLayouts(): LayoutInfo[] {
+    return this._layouts.map((l) => ({ ...l }))
+  }
+
+  switchLayout(name: string): boolean {
+    const layout = this._layouts.find((l) => l.name === name)
+    if (!layout) return false
+    this._currentLayout = name
+    this.onLayoutChanged?.(name)
+    this._render()
+    return true
+  }
+
+  getCurrentLayoutName(): string {
+    return this._currentLayout
+  }
+
+  // --- 엔진 내장 측정 (스텁: no-op) ---
+  addMeasurementLine(_id: string, _p1: Point2D, _p2: Point2D, _color?: string): void { /* stub */ }
+  addMeasurementArc(_id: string, _center: Point2D, _radius: number, _startAngle: number, _endAngle: number, _color?: string): void { /* stub */ }
+  addMeasurementText(_id: string, _position: Point2D, _text: string, _height?: number, _color?: string): void { /* stub */ }
+  addMeasurementPolygon(_id: string, _points: Point2D[], _color?: string): void { /* stub */ }
+  removeMeasurementEntity(_id: string): void { /* stub */ }
+  clearMeasurementEntities(): void { /* stub */ }
 
   dispose(): void {
     if (this._animationFrameId !== null) {
@@ -523,6 +560,43 @@ export class CadEngine {
 
   getSnapPoint(worldX: number, worldY: number, snapTypes: SnapType[]): SnapResult | null {
     return this._viewer?.getSnapPoint(worldX, worldY, snapTypes) ?? null
+  }
+
+  setViewMode(mode: 'select' | 'pan'): void {
+    this._viewer?.setViewMode(mode)
+  }
+
+  // --- Layout 프록시 ---
+  getLayouts(): LayoutInfo[] {
+    return this._viewer?.getLayouts() ?? []
+  }
+
+  switchLayout(name: string): boolean {
+    return this._viewer?.switchLayout(name) ?? false
+  }
+
+  getCurrentLayoutName(): string {
+    return this._viewer?.getCurrentLayoutName() ?? 'Model'
+  }
+
+  // --- 엔진 내장 측정 렌더링 프록시 ---
+  addMeasurementLine(id: string, p1: Point2D, p2: Point2D, color?: string): void {
+    this._viewer?.addMeasurementLine(id, p1, p2, color)
+  }
+  addMeasurementArc(id: string, center: Point2D, radius: number, startAngle: number, endAngle: number, color?: string): void {
+    this._viewer?.addMeasurementArc(id, center, radius, startAngle, endAngle, color)
+  }
+  addMeasurementText(id: string, position: Point2D, text: string, height?: number, color?: string): void {
+    this._viewer?.addMeasurementText(id, position, text, height, color)
+  }
+  addMeasurementPolygon(id: string, points: Point2D[], color?: string): void {
+    this._viewer?.addMeasurementPolygon(id, points, color)
+  }
+  removeMeasurementEntity(id: string): void {
+    this._viewer?.removeMeasurementEntity(id)
+  }
+  clearMeasurementEntities(): void {
+    this._viewer?.clearMeasurementEntities()
   }
 
   getBomData(): BomData {

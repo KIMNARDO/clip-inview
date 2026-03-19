@@ -8,6 +8,7 @@ export const useLayerStore = defineStore('layer', () => {
 
   const visibleCount = computed(() => layers.value.filter((l) => l.visible).length)
   const totalCount = computed(() => layers.value.length)
+  const lockedCount = computed(() => layers.value.filter((l) => l.locked).length)
 
   function setLayers(newLayers: Layer[]) {
     layers.value = newLayers.map((l) => ({ ...l }))
@@ -21,10 +22,28 @@ export const useLayerStore = defineStore('layer', () => {
     }
   }
 
+  function toggleLayerLock(name: string) {
+    const layer = layers.value.find((l) => l.name === name)
+    if (layer) {
+      layer.locked = !layer.locked
+    }
+  }
+
   function setAllVisible(visible: boolean) {
     layers.value.forEach((l) => {
       l.visible = visible
     })
+  }
+
+  function setAllLocked(locked: boolean) {
+    layers.value.forEach((l) => {
+      l.locked = locked
+    })
+  }
+
+  function isLayerLocked(name: string): boolean {
+    const layer = layers.value.find((l) => l.name === name)
+    return layer?.locked ?? false
   }
 
   function selectLayer(name: string | null) {
@@ -41,9 +60,13 @@ export const useLayerStore = defineStore('layer', () => {
     selectedLayerName,
     visibleCount,
     totalCount,
+    lockedCount,
     setLayers,
     toggleLayerVisibility,
+    toggleLayerLock,
     setAllVisible,
+    setAllLocked,
+    isLayerLocked,
     selectLayer,
     clear,
   }

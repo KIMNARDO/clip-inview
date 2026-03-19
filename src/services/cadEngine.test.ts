@@ -166,6 +166,16 @@ describe('CadEngine', () => {
       setLayerVisibility: vi.fn(),
       getEntities: vi.fn().mockReturnValue([]),
       getSnapPoint: vi.fn().mockReturnValue(null),
+      addMeasurementLine: vi.fn(),
+      addMeasurementArc: vi.fn(),
+      addMeasurementText: vi.fn(),
+      addMeasurementPolygon: vi.fn(),
+      removeMeasurementEntity: vi.fn(),
+      clearMeasurementEntities: vi.fn(),
+      setViewMode: vi.fn(),
+      getLayouts: vi.fn().mockReturnValue([]),
+      switchLayout: vi.fn().mockReturnValue(true),
+      getCurrentLayoutName: vi.fn().mockReturnValue('Model'),
       dispose: vi.fn(),
     }
 

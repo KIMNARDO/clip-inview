@@ -101,4 +101,57 @@ describe('useLayerStore', () => {
     store.toggleLayerVisibility('0')
     expect(store.visibleCount).toBe(1)
   })
+
+  // --- Sprint 3: 레이어 잠금 ---
+
+  it('toggleLayerLock으로 잠금을 토글한다', () => {
+    store.setLayers(MOCK_LAYERS)
+    expect(store.layers[0]!.locked).toBe(false)
+
+    store.toggleLayerLock('0')
+    expect(store.layers[0]!.locked).toBe(true)
+
+    store.toggleLayerLock('0')
+    expect(store.layers[0]!.locked).toBe(false)
+  })
+
+  it('존재하지 않는 레이어 잠금 토글은 무시된다', () => {
+    store.setLayers(MOCK_LAYERS)
+    store.toggleLayerLock('nonexistent')
+    expect(store.lockedCount).toBe(0)
+  })
+
+  it('setAllLocked(true)로 모두 잠근다', () => {
+    store.setLayers(MOCK_LAYERS)
+    store.setAllLocked(true)
+    expect(store.lockedCount).toBe(3)
+  })
+
+  it('setAllLocked(false)로 모두 잠금 해제한다', () => {
+    store.setLayers(MOCK_LAYERS)
+    store.setAllLocked(true)
+    store.setAllLocked(false)
+    expect(store.lockedCount).toBe(0)
+  })
+
+  it('isLayerLocked가 잠금 상태를 반환한다', () => {
+    store.setLayers(MOCK_LAYERS)
+    expect(store.isLayerLocked('0')).toBe(false)
+    store.toggleLayerLock('0')
+    expect(store.isLayerLocked('0')).toBe(true)
+  })
+
+  it('isLayerLocked가 존재하지 않는 레이어에 false를 반환한다', () => {
+    store.setLayers(MOCK_LAYERS)
+    expect(store.isLayerLocked('nonexistent')).toBe(false)
+  })
+
+  it('lockedCount가 잠긴 레이어 수를 반환한다', () => {
+    store.setLayers(MOCK_LAYERS)
+    expect(store.lockedCount).toBe(0)
+    store.toggleLayerLock('0')
+    expect(store.lockedCount).toBe(1)
+    store.toggleLayerLock('Dimensions')
+    expect(store.lockedCount).toBe(2)
+  })
 })

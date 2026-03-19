@@ -42,12 +42,21 @@ export type ViewerTool =
   | 'measure-distance'
   | 'measure-area'
   | 'measure-angle'
+  | 'measure-coordinate'
+  | 'measure-point-to-line'
+  | 'measure-arc-length'
+  | 'measure-object'
   | 'markup-text'
   | 'markup-rect'
   | 'markup-circle'
   | 'markup-arrow'
+  | 'markup-line'
+  | 'markup-ellipse'
+  | 'markup-revcloud'
+  | 'markup-leader'
+  | 'markup-freehand'
 
-export type MeasureMode = 'distance' | 'area' | 'angle'
+export type MeasureMode = 'distance' | 'area' | 'angle' | 'coordinate' | 'point-to-line' | 'arc-length' | 'object'
 
 export type SnapType = 'endpoint' | 'midpoint' | 'center' | 'intersection'
 
@@ -63,6 +72,59 @@ export interface MeasurementResult {
   points: Point2D[]
   value: number
   unit: string
+  /** 보조 값 (예: 점-선 거리에서 수선의 발 좌표, 호 길이에서 원 정보) */
+  auxiliary?: {
+    projection?: Point2D
+    segments?: { value: number; unit: string }[]
+    arcCenter?: Point2D
+    arcRadius?: number
+    arcStartAngle?: number
+    arcEndAngle?: number
+  }
+}
+
+// ─── 측정 설정 ───
+
+export interface MeasurementSettings {
+  scale: {
+    ratio: number       // 예: 1, 100, 50
+    label: string       // 예: "1:1", "1:100"
+  }
+  style: {
+    textHeight: number
+    arrowSize: number
+    textColor: string
+    lineColor: string
+    lineWidth: number
+  }
+  length: {
+    unit: 'mm' | 'cm' | 'm'
+    precision: number   // 소수점 자릿수
+  }
+  area: {
+    unit: 'mm²' | 'cm²' | 'm²'
+    precision: number
+  }
+  angle: {
+    unit: 'decimal' | 'dms'
+    precision: number
+  }
+  coordinate: {
+    system: 'world' | 'user'
+    precision: number
+  }
+}
+
+// ─── Layout 타입 ───
+
+export interface LayoutInfo {
+  name: string
+  /** 'Model' = 모델 공간, 'Paper' = 배치(페이퍼) 공간 */
+  type: 'Model' | 'Paper'
+  /** 정렬 순서 (탭 표시용) */
+  tabOrder: number
+  /** 엔진 내부 block table record ID */
+  blockId?: string
 }
 
 /** 로드된 파일 정보 */
@@ -87,6 +149,11 @@ export interface ICadViewer {
   onMouseMove?: (worldPos: Point2D) => void
   onZoomChange?: (level: number) => void
 
+  // 뷰 모드: 'select' = 엔티티 선택, 'pan' = 드래그로 이동
+  setViewMode(mode: 'select' | 'pan'): void
+  // 선택 이벤트
+  onSelectionChanged?: (entityIds: string[]) => void
+
   // M2: 레이어 관리
   getLayers(): Layer[]
   setLayerVisibility(layerName: string, visible: boolean): void
@@ -96,11 +163,25 @@ export interface ICadViewer {
 
   // M2: 스냅
   getSnapPoint(worldX: number, worldY: number, snapTypes: SnapType[]): SnapResult | null
+
+  // Layout 전환
+  getLayouts(): LayoutInfo[]
+  switchLayout(name: string): boolean
+  getCurrentLayoutName(): string
+  onLayoutChanged?: (name: string) => void
+
+  // M2: 엔진 내장 측정 렌더링 (transient entity 기반)
+  addMeasurementLine(id: string, p1: Point2D, p2: Point2D, color?: string): void
+  addMeasurementArc(id: string, center: Point2D, radius: number, startAngle: number, endAngle: number, color?: string): void
+  addMeasurementText(id: string, position: Point2D, text: string, height?: number, color?: string): void
+  addMeasurementPolygon(id: string, points: Point2D[], color?: string): void
+  removeMeasurementEntity(id: string): void
+  clearMeasurementEntities(): void
 }
 
 // ─── M3: 마크업 타입 ───
 
-export type MarkupType = 'text' | 'rect' | 'circle' | 'arrow'
+export type MarkupType = 'text' | 'rect' | 'circle' | 'arrow' | 'line' | 'ellipse' | 'revcloud' | 'leader' | 'freehand'
 
 export interface MarkupStyle {
   color: string

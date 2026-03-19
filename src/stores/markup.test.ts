@@ -193,4 +193,116 @@ describe('useMarkupStore', () => {
 
     expect(store.markups[0]!.id).not.toBe(store.markups[1]!.id)
   })
+
+  // --- Sprint 2: 신규 마크업 타입 ---
+
+  it('직선: 2점 클릭 시 자동 완료된다', () => {
+    store.setMarkupType('line')
+    store.addPoint({ x: 0, y: 0 })
+    store.addPoint({ x: 100, y: 100 })
+
+    expect(store.markups).toHaveLength(1)
+    expect(store.markups[0]!.type).toBe('line')
+    expect(store.markups[0]!.points).toHaveLength(2)
+  })
+
+  it('타원: 2점 클릭 시 자동 완료된다', () => {
+    store.setMarkupType('ellipse')
+    store.addPoint({ x: 10, y: 10 })
+    store.addPoint({ x: 60, y: 40 })
+
+    expect(store.markups).toHaveLength(1)
+    expect(store.markups[0]!.type).toBe('ellipse')
+  })
+
+  it('구름형: 2점 클릭 시 자동 완료된다', () => {
+    store.setMarkupType('revcloud')
+    store.addPoint({ x: 0, y: 0 })
+    store.addPoint({ x: 200, y: 100 })
+
+    expect(store.markups).toHaveLength(1)
+    expect(store.markups[0]!.type).toBe('revcloud')
+  })
+
+  it('지시선: 2점 클릭 후 completeTextMarkup으로 완료', () => {
+    store.setMarkupType('leader')
+    store.addPoint({ x: 50, y: 50 })
+    store.addPoint({ x: 100, y: 30 })
+
+    // 2점 후 텍스트 입력 대기 (leader는 twoPointTypes에 포함되지 않음)
+    // leader는 addPoint에서 자동완료되지 않고 completeTextMarkup으로 완료
+    expect(store.currentPoints).toHaveLength(2)
+    expect(store.markups).toHaveLength(0)
+
+    store.completeTextMarkup('주의사항')
+
+    expect(store.markups).toHaveLength(1)
+    expect(store.markups[0]!.type).toBe('leader')
+    expect(store.markups[0]!.text).toBe('주의사항')
+    expect(store.markups[0]!.points).toHaveLength(2)
+  })
+
+  it('지시선: 빈 텍스트로는 완료되지 않는다', () => {
+    store.setMarkupType('leader')
+    store.addPoint({ x: 50, y: 50 })
+    store.addPoint({ x: 100, y: 30 })
+    store.completeTextMarkup('')
+    expect(store.markups).toHaveLength(0)
+  })
+
+  it('자유곡선: completeFreehand로 완료된다', () => {
+    store.setMarkupType('freehand')
+    const points = [
+      { x: 0, y: 0 },
+      { x: 10, y: 5 },
+      { x: 20, y: 15 },
+      { x: 30, y: 10 },
+    ]
+    store.completeFreehand(points)
+
+    expect(store.markups).toHaveLength(1)
+    expect(store.markups[0]!.type).toBe('freehand')
+    expect(store.markups[0]!.points).toHaveLength(4)
+  })
+
+  it('자유곡선: 2점 미만이면 완료되지 않는다', () => {
+    store.setMarkupType('freehand')
+    store.completeFreehand([{ x: 0, y: 0 }])
+    expect(store.markups).toHaveLength(0)
+  })
+
+  it('자유곡선: 포인트가 깊은 복사된다', () => {
+    const points = [{ x: 0, y: 0 }, { x: 10, y: 10 }]
+    store.completeFreehand(points)
+
+    points[0]!.x = 999
+    expect(store.markups[0]!.points[0]!.x).toBe(0)
+  })
+
+  it('toggleVisibility로 마크업 표시/숨기기를 토글한다', () => {
+    expect(store.isVisible).toBe(true)
+    store.toggleVisibility()
+    expect(store.isVisible).toBe(false)
+    store.toggleVisibility()
+    expect(store.isVisible).toBe(true)
+  })
+
+  it('신규 마크업 타입도 export/import가 된다', () => {
+    store.setMarkupType('line')
+    store.addPoint({ x: 0, y: 0 })
+    store.addPoint({ x: 50, y: 50 })
+
+    store.setMarkupType('freehand')
+    store.completeFreehand([{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 5 }])
+
+    const data = store.exportToJson('test.dwg')
+    expect(data.markups).toHaveLength(2)
+    expect(data.markups[0]!.type).toBe('line')
+    expect(data.markups[1]!.type).toBe('freehand')
+
+    store.clearMarkups()
+    store.importFromJson(data)
+    expect(store.markups).toHaveLength(2)
+    expect(store.markups[1]!.points).toHaveLength(3)
+  })
 })

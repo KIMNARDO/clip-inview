@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { useLayerStore } from '@/stores/layer'
-import { EyeIcon, EyeOffIcon } from 'lucide-vue-next'
+import { EyeIcon, EyeOffIcon, LockIcon, UnlockIcon } from 'lucide-vue-next'
 
 const emit = defineEmits<{
   toggleVisibility: [layerName: string, visible: boolean]
   toggleAll: [visible: boolean]
+  toggleLock: [layerName: string, locked: boolean]
 }>()
 
 const layerStore = useLayerStore()
@@ -27,18 +28,26 @@ function handleAllOff() {
   layerStore.setAllVisible(false)
   emit('toggleAll', false)
 }
+
+function handleToggleLock(name: string) {
+  const layer = layerStore.layers.find((l) => l.name === name)
+  if (layer) {
+    layerStore.toggleLayerLock(name)
+    emit('toggleLock', name, !layer.locked)
+  }
+}
 </script>
 
 <template>
   <aside class="layer-panel-root">
     <div class="layer-panel-header">
-      <span class="layer-panel-title">Layers</span>
+      <span class="layer-panel-title">레이어</span>
       <span class="layer-panel-count">{{ layerStore.visibleCount }}/{{ layerStore.totalCount }}</span>
     </div>
 
     <div class="layer-panel-actions">
-      <button class="layer-action-button" title="모두 켜기" @click="handleAllOn">All On</button>
-      <button class="layer-action-button" title="모두 끄기" @click="handleAllOff">All Off</button>
+      <button class="layer-action-button" title="모두 켜기" @click="handleAllOn">모두 켜기</button>
+      <button class="layer-action-button" title="모두 끄기" @click="handleAllOff">모두 끄기</button>
     </div>
 
     <div v-if="layerStore.layers.length === 0" class="layer-panel-empty">
@@ -46,13 +55,14 @@ function handleAllOff() {
     </div>
 
     <div v-else class="layer-list">
-      <button
+      <div
         v-for="layer in layerStore.layers"
         :key="layer.name"
         class="layer-item"
         :class="{
           'layer-item--selected': layerStore.selectedLayerName === layer.name,
           'layer-item--hidden': !layer.visible,
+          'layer-item--locked': layer.locked,
         }"
         @click="layerStore.selectLayer(layer.name)"
       >
@@ -62,6 +72,14 @@ function handleAllOff() {
         />
         <span class="layer-name">{{ layer.name }}</span>
         <button
+          class="layer-lock-toggle"
+          :title="layer.locked ? '잠금 해제' : '잠금'"
+          @click.stop="handleToggleLock(layer.name)"
+        >
+          <LockIcon v-if="layer.locked" :size="14" :stroke-width="1.5" />
+          <UnlockIcon v-else :size="14" :stroke-width="1.5" />
+        </button>
+        <button
           class="layer-visibility-toggle"
           :title="layer.visible ? '숨기기' : '표시'"
           @click.stop="handleToggle(layer.name)"
@@ -69,7 +87,7 @@ function handleAllOff() {
           <EyeIcon v-if="layer.visible" :size="14" :stroke-width="1.5" />
           <EyeOffIcon v-else :size="14" :stroke-width="1.5" />
         </button>
-      </button>
+      </div>
     </div>
   </aside>
 </template>
@@ -195,6 +213,11 @@ function handleAllOff() {
   white-space: nowrap;
 }
 
+.layer-item--locked .layer-name {
+  font-style: italic;
+}
+
+.layer-lock-toggle,
 .layer-visibility-toggle {
   display: flex;
   align-items: center;
@@ -209,8 +232,13 @@ function handleAllOff() {
   flex-shrink: 0;
 }
 
+.layer-lock-toggle:hover,
 .layer-visibility-toggle:hover {
   color: var(--cad-text-primary);
   background: var(--cad-hover-bg-strong);
+}
+
+.layer-item--locked .layer-lock-toggle {
+  color: #F59E0B;
 }
 </style>

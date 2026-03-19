@@ -30,18 +30,18 @@ function handleSelect(node: BomNode) {
 <template>
   <aside class="bom-panel-root">
     <div class="bom-panel-header">
-      <span class="bom-panel-title">BOM Tree</span>
-      <span class="bom-panel-count">{{ bomStore.totalParts }} parts</span>
+      <span class="bom-panel-title">BOM 트리</span>
+      <span class="bom-panel-count">{{ bomStore.totalParts }}개 부품</span>
     </div>
 
     <div class="bom-panel-actions">
       <button class="bom-action-button" title="모두 펼치기" @click="bomStore.expandAll()">
         <ChevronsUpDownIcon :size="12" :stroke-width="1.5" />
-        <span>Expand</span>
+        <span>모두 펼치기</span>
       </button>
       <button class="bom-action-button" title="모두 접기" @click="bomStore.collapseAll()">
         <ChevronsDownUpIcon :size="12" :stroke-width="1.5" />
-        <span>Collapse</span>
+        <span>모두 접기</span>
       </button>
     </div>
 

@@ -20,6 +20,9 @@ export const useAppStore = defineStore('app', () => {
   const isBomPanelOpen = ref(false)
   const isCommandPaletteVisible = ref(true)
 
+  // --- 선택 상태 ---
+  const selectedEntityIds = ref<string[]>([])
+
   // --- 상태바 토글 ---
   const isGridEnabled = ref(false)
   const isSnapEnabled = ref(false)
@@ -42,10 +45,19 @@ export const useAppStore = defineStore('app', () => {
       'measure-distance': '거리 측정',
       'measure-area': '면적 측정',
       'measure-angle': '각도 측정',
+      'measure-coordinate': '좌표 측정',
+      'measure-arc-length': '호 길이 측정',
+      'measure-point-to-line': '점-선 거리',
+      'measure-object': '객체 측정',
       'markup-text': '텍스트 마크업',
       'markup-rect': '사각형 마크업',
       'markup-circle': '원 마크업',
       'markup-arrow': '화살표 마크업',
+      'markup-line': '직선 마크업',
+      'markup-ellipse': '타원 마크업',
+      'markup-revcloud': '구름형 마크업',
+      'markup-leader': '지시선 마크업',
+      'markup-freehand': '자유곡선 마크업',
     }
     return labels[activeTool.value]
   })
@@ -135,6 +147,7 @@ export const useAppStore = defineStore('app', () => {
     isSnapEnabled,
     isOrthoEnabled,
     isOsnapEnabled,
+    selectedEntityIds,
 
     // Computed
     formattedZoom,

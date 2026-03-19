@@ -18,6 +18,7 @@ export const useMarkupStore = defineStore('markup', () => {
   const currentStyle = ref<MarkupStyle>({ ...DEFAULT_STYLE })
   const selectedMarkupId = ref<string | null>(null)
   const pendingText = ref<string>('')
+  const isVisible = ref(true)
 
   const isActive = computed(() => activeMarkupType.value !== null)
   const selectedMarkup = computed(() =>
@@ -35,37 +36,37 @@ export const useMarkupStore = defineStore('markup', () => {
 
     currentPoints.value.push({ ...point })
 
-    // 자동 완료 조건
-    switch (activeMarkupType.value) {
-      case 'text':
-        // 텍스트는 1점 클릭 → 텍스트 입력 대기
-        break
-      case 'rect':
-        if (currentPoints.value.length === 2) {
-          completeMarkup()
-        }
-        break
-      case 'circle':
-        if (currentPoints.value.length === 2) {
-          completeMarkup()
-        }
-        break
-      case 'arrow':
-        if (currentPoints.value.length === 2) {
-          completeMarkup()
-        }
-        break
+    // 2점 자동 완료 타입
+    const twoPointTypes: MarkupType[] = ['rect', 'circle', 'arrow', 'line', 'ellipse', 'revcloud']
+    if (twoPointTypes.includes(activeMarkupType.value) && currentPoints.value.length === 2) {
+      completeMarkup()
     }
+    // text, leader: 1점 → 텍스트 입력 대기 (외부에서 처리)
+    // freehand: addFreehandPoints로 처리
   }
 
-  /** 텍스트 마크업 완료 (위치 + 텍스트) */
+  /** 자유곡선 포인트 세트 추가 후 완료 */
+  function completeFreehand(points: Point2D[]) {
+    if (points.length < 2) return
+    const entity: MarkupEntity = {
+      id: `mk-${nextId++}`,
+      type: 'freehand',
+      points: points.map((p) => ({ ...p })),
+      style: { ...currentStyle.value },
+      createdAt: Date.now(),
+    }
+    markups.value.push(entity)
+    currentPoints.value = []
+  }
+
+  /** 텍스트/지시선 마크업 완료 (위치 + 텍스트) */
   function completeTextMarkup(text: string) {
-    if (!activeMarkupType.value || activeMarkupType.value !== 'text') return
+    if (!activeMarkupType.value || (activeMarkupType.value !== 'text' && activeMarkupType.value !== 'leader')) return
     if (currentPoints.value.length < 1 || !text.trim()) return
 
     const entity: MarkupEntity = {
       id: `mk-${nextId++}`,
-      type: 'text',
+      type: activeMarkupType.value,
       points: [...currentPoints.value],
       text: text.trim(),
       style: { ...currentStyle.value },
@@ -116,6 +117,10 @@ export const useMarkupStore = defineStore('markup', () => {
     selectedMarkupId.value = null
   }
 
+  function toggleVisibility() {
+    isVisible.value = !isVisible.value
+  }
+
   function setStyle(style: Partial<MarkupStyle>) {
     currentStyle.value = { ...currentStyle.value, ...style }
   }
@@ -142,6 +147,11 @@ export const useMarkupStore = defineStore('markup', () => {
     selectedMarkupId.value = null
   }
 
+  function restoreFromSnapshot(snapshot: MarkupEntity[]) {
+    markups.value = snapshot
+    selectedMarkupId.value = null
+  }
+
   return {
     markups,
     activeMarkupType,
@@ -150,17 +160,21 @@ export const useMarkupStore = defineStore('markup', () => {
     selectedMarkupId,
     pendingText,
     isActive,
+    isVisible,
     selectedMarkup,
     setMarkupType,
     addPoint,
     completeMarkup,
+    completeFreehand,
     completeTextMarkup,
     cancelMarkup,
     selectMarkup,
     deleteMarkup,
     clearMarkups,
     setStyle,
+    toggleVisibility,
     exportToJson,
     importFromJson,
+    restoreFromSnapshot,
   }
 })

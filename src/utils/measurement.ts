@@ -37,6 +37,100 @@ export function calculateAngle(p1: Point2D, vertex: Point2D, p2: Point2D): numbe
   return (Math.acos(cos) * 180) / Math.PI
 }
 
+/** 세 점으로 정의된 호의 길이 (p1: 시작점, p2: 경유점, p3: 끝점) */
+export function calculateArcLength(
+  p1: Point2D,
+  p2: Point2D,
+  p3: Point2D,
+): { arcLength: number; center: Point2D; radius: number; startAngle: number; endAngle: number } {
+  // 세 점으로 외접원 구하기
+  const ax = p1.x, ay = p1.y
+  const bx = p2.x, by = p2.y
+  const cx = p3.x, cy = p3.y
+
+  const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
+
+  if (Math.abs(d) < 1e-10) {
+    // 세 점이 직선 위 → 호가 아닌 직선 거리 반환
+    const dist = calculateDistance(p1, p2) + calculateDistance(p2, p3)
+    return {
+      arcLength: dist,
+      center: { x: (ax + cx) / 2, y: (ay + cy) / 2 },
+      radius: 0,
+      startAngle: 0,
+      endAngle: 0,
+    }
+  }
+
+  const ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d
+  const uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d
+
+  const center: Point2D = { x: ux, y: uy }
+  const radius = Math.hypot(ax - ux, ay - uy)
+
+  // 시작/끝/경유 각도
+  const startAngle = Math.atan2(ay - uy, ax - ux)
+  const midAngle = Math.atan2(by - uy, bx - ux)
+  const endAngle = Math.atan2(cy - uy, cx - ux)
+
+  // 호가 경유점을 포함하는 방향 결정
+  function normalizeAngle(a: number): number {
+    while (a < 0) a += 2 * Math.PI
+    while (a >= 2 * Math.PI) a -= 2 * Math.PI
+    return a
+  }
+
+  const sa = normalizeAngle(startAngle)
+  const ma = normalizeAngle(midAngle)
+  const ea = normalizeAngle(endAngle)
+
+  // 시작→끝 반시계 방향 각도
+  let sweep = normalizeAngle(ea - sa)
+  // 경유점이 반시계 방향 호 안에 있는지 확인
+  const midInSweep = normalizeAngle(ma - sa) <= sweep
+  if (!midInSweep) {
+    // 반대 방향 호
+    sweep = 2 * Math.PI - sweep
+  }
+
+  const arcLength = radius * sweep
+
+  return { arcLength, center, radius, startAngle: sa, endAngle: ea }
+}
+
+/** 점에서 선분까지의 최단 거리 및 수선의 발 */
+export function calculatePointToLineDistance(
+  point: Point2D,
+  lineStart: Point2D,
+  lineEnd: Point2D,
+): { distance: number; projection: Point2D } {
+  const dx = lineEnd.x - lineStart.x
+  const dy = lineEnd.y - lineStart.y
+  const lenSq = dx * dx + dy * dy
+
+  if (lenSq === 0) {
+    // 선분이 점인 경우
+    return {
+      distance: calculateDistance(point, lineStart),
+      projection: { ...lineStart },
+    }
+  }
+
+  // 선분 위의 비율 t (0~1 클램프 → 선분 위, 제한 없으면 직선 위)
+  let t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lenSq
+  t = Math.max(0, Math.min(1, t))
+
+  const projection: Point2D = {
+    x: lineStart.x + t * dx,
+    y: lineStart.y + t * dy,
+  }
+
+  return {
+    distance: calculateDistance(point, projection),
+    projection,
+  }
+}
+
 /** 측정 결과 포맷팅 */
 export function formatMeasurement(value: number, unit: string): string {
   if (unit === '°') {
