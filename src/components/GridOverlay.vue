@@ -11,17 +11,19 @@ const store = useAppStore()
 const canvas = ref<HTMLCanvasElement | null>(null)
 let ctx: CanvasRenderingContext2D | null = null
 let resizeObserver: ResizeObserver | null = null
+let rafId: number | null = null
 
 onMounted(() => {
   if (!canvas.value) return
   ctx = canvas.value.getContext('2d')
-  resizeObserver = new ResizeObserver(render)
+  resizeObserver = new ResizeObserver(() => render())
   resizeObserver.observe(canvas.value.parentElement!)
-  render()
+  renderImmediate()
 })
 
 onUnmounted(() => {
   resizeObserver?.disconnect()
+  if (rafId !== null) cancelAnimationFrame(rafId)
 })
 
 // 줌 레벨에 따라 그리드 간격을 동적 조정
@@ -36,7 +38,16 @@ function getGridSpacing(): number {
   return 250
 }
 
+/** RAF 스로틀 렌더 */
 function render() {
+  if (rafId !== null) return
+  rafId = requestAnimationFrame(() => {
+    rafId = null
+    renderImmediate()
+  })
+}
+
+function renderImmediate() {
   if (!canvas.value || !ctx || !store.isGridEnabled) return
 
   const parent = canvas.value.parentElement

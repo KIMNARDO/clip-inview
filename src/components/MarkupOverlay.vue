@@ -12,6 +12,7 @@ const markupStore = useMarkupStore()
 const canvas = ref<HTMLCanvasElement | null>(null)
 let ctx: CanvasRenderingContext2D | null = null
 let resizeObserver: ResizeObserver | null = null
+let rafId: number | null = null
 
 onMounted(() => {
   if (canvas.value) {
@@ -26,6 +27,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   resizeObserver?.disconnect()
+  if (rafId !== null) cancelAnimationFrame(rafId)
 })
 
 function resizeCanvas() {
@@ -43,7 +45,16 @@ function toScreen(world: Point2D): Point2D {
   return props.getScreenCoords(world.x, world.y)
 }
 
+/** RAF 스로틀 렌더 — 프레임당 최대 1회 */
 function render() {
+  if (rafId !== null) return
+  rafId = requestAnimationFrame(() => {
+    rafId = null
+    renderImmediate()
+  })
+}
+
+function renderImmediate() {
   if (!ctx || !canvas.value) return
   const dpr = window.devicePixelRatio || 1
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)

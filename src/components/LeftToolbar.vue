@@ -24,11 +24,6 @@ import {
   ListTreeIcon,
   FolderOpenIcon,
   SquareIcon,
-  TriangleRightIcon,
-  CrosshairIcon,
-  MoveIcon,
-  BoxIcon,
-  SplineIcon,
   TypeIcon,
   CircleIcon,
   ArrowRightIcon,
@@ -111,9 +106,9 @@ function handleToolClick(toolId: ViewerTool) {
   }
 }
 
-function activateMeasure(mode: string, tool: string) {
+function activateMeasure(mode: string, tool: string, areaSubType?: string) {
   if (markupStore.isActive) markupStore.cancelMarkup()
-  measureStore.setMeasureMode(mode as any)
+  measureStore.setMeasureMode(mode as any, areaSubType as any)
   store.setActiveTool(tool as any)
   closeSubmenu()
 }
@@ -224,10 +219,11 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
 </script>
 
 <template>
+  <div class="left-toolbar-wrapper">
   <aside class="sidebar-root">
     <!-- 파일 열기 -->
     <button class="sidebar-item" title="파일 열기 (Ctrl+O)" @click="handleOpenFile">
-      <FolderOpenIcon :size="22" :stroke-width="1.5" />
+      <FolderOpenIcon :size="18" :stroke-width="1.5" />
       <span class="sidebar-label">열기</span>
     </button>
 
@@ -239,7 +235,7 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
         title="내보내기"
         @click.stop="toggleSubmenu('export', exportBtnRef)"
       >
-        <DownloadIcon :size="22" :stroke-width="1.5" />
+        <DownloadIcon :size="18" :stroke-width="1.5" />
         <span class="sidebar-label">내보내기</span>
       </button>
     </div>
@@ -253,7 +249,7 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
       title="선택 (S)"
       @click="handleToolClick('select')"
     >
-      <MousePointer2Icon :size="22" :stroke-width="1.5" />
+      <MousePointer2Icon :size="18" :stroke-width="1.5" />
       <span class="sidebar-label">선택</span>
     </button>
 
@@ -264,13 +260,13 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
       title="이동 (P)"
       @click="handleToolClick('pan')"
     >
-      <HandIcon :size="22" :stroke-width="1.5" />
+      <HandIcon :size="18" :stroke-width="1.5" />
       <span class="sidebar-label">이동</span>
     </button>
 
     <!-- 전체 도면보기 -->
     <button class="sidebar-item" title="전체 도면보기 (Home)" @click="handleToolClick('fit')">
-      <Maximize2Icon :size="22" :stroke-width="1.5" />
+      <Maximize2Icon :size="18" :stroke-width="1.5" />
       <span class="sidebar-label">전체보기</span>
     </button>
 
@@ -281,19 +277,19 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
       title="줌 윈도우 (Z)"
       @click="handleToolClick('zoom-window')"
     >
-      <ZoomInIcon :size="22" :stroke-width="1.5" />
+      <ZoomInIcon :size="18" :stroke-width="1.5" />
       <span class="sidebar-label">줌</span>
     </button>
 
     <!-- 전체 화면 -->
     <button class="sidebar-item" title="전체 화면 (F11)" @click="toggleFullscreen">
-      <MonitorIcon :size="22" :stroke-width="1.5" />
+      <MonitorIcon :size="18" :stroke-width="1.5" />
       <span class="sidebar-label">전체 화면</span>
     </button>
 
     <!-- 배경 전환 -->
     <button class="sidebar-item" title="배경 전환" @click="toggleBackground">
-      <SunMoonIcon :size="22" :stroke-width="1.5" />
+      <SunMoonIcon :size="18" :stroke-width="1.5" />
       <span class="sidebar-label">배경 전환</span>
     </button>
 
@@ -309,7 +305,7 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
         title="치수 측정"
         @click.stop="toggleSubmenu('measure', measureBtnRef)"
       >
-        <RulerIcon :size="22" :stroke-width="1.5" />
+        <RulerIcon :size="18" :stroke-width="1.5" />
         <span class="sidebar-label">치수</span>
       </button>
     </div>
@@ -324,7 +320,7 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
         title="주석 (마크업)"
         @click.stop="toggleSubmenu('markup', markupBtnRef)"
       >
-        <StickyNoteIcon :size="22" :stroke-width="1.5" />
+        <StickyNoteIcon :size="18" :stroke-width="1.5" />
         <span class="sidebar-label">주석</span>
       </button>
     </div>
@@ -337,7 +333,7 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
       @click="markupStore.toggleVisibility()"
       :disabled="markupStore.markups.length === 0"
     >
-      <EyeOffIcon :size="22" :stroke-width="1.5" />
+      <EyeOffIcon :size="18" :stroke-width="1.5" />
       <span class="sidebar-label">주석 숨기기</span>
     </button>
 
@@ -350,7 +346,7 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
       title="레이어 패널"
       @click="store.toggleLayerPanel()"
     >
-      <LayersIcon :size="22" :stroke-width="1.5" />
+      <LayersIcon :size="18" :stroke-width="1.5" />
       <span class="sidebar-label">레이어</span>
     </button>
 
@@ -361,7 +357,7 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
       title="BOM 트리"
       @click="store.toggleBomPanel()"
     >
-      <ListTreeIcon :size="22" :stroke-width="1.5" />
+      <ListTreeIcon :size="18" :stroke-width="1.5" />
       <span class="sidebar-label">BOM</span>
     </button>
 
@@ -413,77 +409,142 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
     <Transition name="popover">
       <div
         v-if="activeSubmenu === 'measure'"
-        class="submenu-popover"
+        class="submenu-popover submenu-popover--measure"
         :style="popoverStyle"
         @click.stop
       >
-        <div class="submenu-header">치수 측정</div>
+        <!-- 길이 -->
         <button
-          class="submenu-item"
-          :class="{ 'submenu-item--active': isMeasureActive('measure-distance') }"
+          class="measure-menu-item"
+          :class="{ 'measure-menu-item--active': isMeasureActive('measure-distance') }"
           @click="activateMeasure('distance', 'measure-distance')"
         >
-          <RulerIcon :size="18" :stroke-width="1.5" />
-          <span>거리</span>
-          <kbd class="submenu-shortcut">D</kbd>
+          <div class="measure-menu-icon">
+            <svg viewBox="0 0 40 32" width="40" height="32">
+              <line x1="4" y1="16" x2="36" y2="16" stroke="currentColor" stroke-width="1.5" />
+              <line x1="4" y1="10" x2="4" y2="22" stroke="currentColor" stroke-width="1.5" />
+              <line x1="36" y1="10" x2="36" y2="22" stroke="currentColor" stroke-width="1.5" />
+              <polygon points="8,16 4,13 4,19" fill="currentColor" />
+              <polygon points="32,16 36,13 36,19" fill="currentColor" />
+            </svg>
+          </div>
+          <span class="measure-menu-label">길이</span>
         </button>
+
+        <!-- 면적 — 삼각형 (3점) -->
         <button
-          class="submenu-item"
-          :class="{ 'submenu-item--active': isMeasureActive('measure-area') }"
-          @click="activateMeasure('area', 'measure-area')"
+          class="measure-menu-item"
+          :class="{ 'measure-menu-item--active': isMeasureActive('measure-area') && measureStore.areaSubType === 'triangle' }"
+          @click="activateMeasure('area', 'measure-area', 'triangle')"
         >
-          <SquareIcon :size="18" :stroke-width="1.5" />
-          <span>면적</span>
-          <kbd class="submenu-shortcut">A</kbd>
+          <div class="measure-menu-icon">
+            <svg viewBox="0 0 40 32" width="40" height="32">
+              <polygon points="8,26 20,4 32,26" fill="rgba(96,165,250,0.15)" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+              <circle cx="8" cy="26" r="2" fill="#4ADE80" />
+              <circle cx="20" cy="4" r="2" fill="#4ADE80" />
+              <circle cx="32" cy="26" r="2" fill="#4ADE80" />
+            </svg>
+          </div>
+          <span class="measure-menu-label">삼각형</span>
         </button>
+
+        <!-- 면적 — 사각형 (4점) -->
         <button
-          class="submenu-item"
-          :class="{ 'submenu-item--active': isMeasureActive('measure-angle') }"
-          @click="activateMeasure('angle', 'measure-angle')"
+          class="measure-menu-item"
+          :class="{ 'measure-menu-item--active': isMeasureActive('measure-area') && measureStore.areaSubType === 'rectangle' }"
+          @click="activateMeasure('area', 'measure-area', 'rectangle')"
         >
-          <TriangleRightIcon :size="18" :stroke-width="1.5" />
-          <span>각도</span>
+          <div class="measure-menu-icon">
+            <svg viewBox="0 0 40 32" width="40" height="32">
+              <rect x="6" y="6" width="28" height="20" fill="rgba(96,165,250,0.15)" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+              <circle cx="6" cy="6" r="2" fill="#4ADE80" />
+              <circle cx="34" cy="6" r="2" fill="#4ADE80" />
+              <circle cx="34" cy="26" r="2" fill="#4ADE80" />
+              <circle cx="6" cy="26" r="2" fill="#4ADE80" />
+            </svg>
+          </div>
+          <span class="measure-menu-label">사각형</span>
         </button>
+
+        <!-- 면적 — 다각형 (n점, 더블클릭 완료) -->
         <button
-          class="submenu-item"
-          :class="{ 'submenu-item--active': isMeasureActive('measure-coordinate') }"
+          class="measure-menu-item"
+          :class="{ 'measure-menu-item--active': isMeasureActive('measure-area') && measureStore.areaSubType === 'polygon' }"
+          @click="activateMeasure('area', 'measure-area', 'polygon')"
+        >
+          <div class="measure-menu-icon">
+            <svg viewBox="0 0 40 32" width="40" height="32">
+              <polygon points="10,26 4,14 14,4 28,4 36,14 30,26" fill="rgba(96,165,250,0.15)" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+              <circle cx="10" cy="26" r="1.5" fill="#4ADE80" />
+              <circle cx="4" cy="14" r="1.5" fill="#4ADE80" />
+              <circle cx="14" cy="4" r="1.5" fill="#4ADE80" />
+              <circle cx="28" cy="4" r="1.5" fill="#4ADE80" />
+              <circle cx="36" cy="14" r="1.5" fill="#4ADE80" />
+              <circle cx="30" cy="26" r="1.5" fill="#4ADE80" />
+            </svg>
+          </div>
+          <span class="measure-menu-label">다각형</span>
+        </button>
+
+        <!-- 좌표 측정 -->
+        <button
+          class="measure-menu-item"
+          :class="{ 'measure-menu-item--active': isMeasureActive('measure-coordinate') }"
           @click="activateMeasure('coordinate', 'measure-coordinate')"
         >
-          <CrosshairIcon :size="18" :stroke-width="1.5" />
-          <span>좌표</span>
+          <div class="measure-menu-icon">
+            <svg viewBox="0 0 40 32" width="40" height="32">
+              <line x1="4" y1="28" x2="36" y2="28" stroke="currentColor" stroke-width="1" opacity="0.5" />
+              <line x1="4" y1="28" x2="4" y2="4" stroke="currentColor" stroke-width="1" opacity="0.5" />
+              <path d="M8 24 L16 10 L24 18 L32 6" stroke="#60A5FA" stroke-width="1.5" fill="none" stroke-dasharray="3 2" />
+              <circle cx="16" cy="10" r="2.5" fill="#4ADE80" />
+              <circle cx="24" cy="18" r="2.5" fill="#F59E0B" />
+              <circle cx="32" cy="6" r="2.5" fill="#4ADE80" />
+            </svg>
+          </div>
+          <span class="measure-menu-label">좌표 측정</span>
         </button>
+
+        <!-- 호 길이 측정 -->
         <button
-          class="submenu-item"
-          :class="{ 'submenu-item--active': isMeasureActive('measure-arc-length') }"
+          class="measure-menu-item"
+          :class="{ 'measure-menu-item--active': isMeasureActive('measure-arc-length') }"
           @click="activateMeasure('arc-length', 'measure-arc-length')"
         >
-          <SplineIcon :size="18" :stroke-width="1.5" />
-          <span>호 길이</span>
+          <div class="measure-menu-icon">
+            <svg viewBox="0 0 40 32" width="40" height="32">
+              <path d="M6 26 Q20 0 34 26" stroke="currentColor" stroke-width="1.5" fill="none" />
+              <line x1="6" y1="26" x2="6" y2="20" stroke="currentColor" stroke-width="1.2" />
+              <line x1="34" y1="26" x2="34" y2="20" stroke="currentColor" stroke-width="1.2" />
+              <path d="M14 10 Q20 4 26 10" stroke="#60A5FA" stroke-width="1.2" fill="none" stroke-dasharray="2 2" />
+            </svg>
+          </div>
+          <span class="measure-menu-label">호 길이 측정</span>
         </button>
+
+        <!-- 각도 측정 -->
         <button
-          class="submenu-item"
-          :class="{ 'submenu-item--active': isMeasureActive('measure-point-to-line') }"
-          @click="activateMeasure('point-to-line', 'measure-point-to-line')"
+          class="measure-menu-item"
+          :class="{ 'measure-menu-item--active': isMeasureActive('measure-angle') }"
+          @click="activateMeasure('angle', 'measure-angle')"
         >
-          <MoveIcon :size="18" :stroke-width="1.5" />
-          <span>점-선 거리</span>
+          <div class="measure-menu-icon">
+            <svg viewBox="0 0 40 32" width="40" height="32">
+              <line x1="6" y1="28" x2="34" y2="28" stroke="currentColor" stroke-width="1.5" />
+              <line x1="6" y1="28" x2="22" y2="4" stroke="currentColor" stroke-width="1.5" />
+              <path d="M14 28 A8 8 0 0 1 12 20" stroke="#F59E0B" stroke-width="1.5" fill="none" />
+              <text x="17" y="24" fill="#F59E0B" font-size="8" font-weight="600">°</text>
+            </svg>
+          </div>
+          <span class="measure-menu-label">각도 측정</span>
         </button>
-        <button
-          class="submenu-item"
-          :class="{ 'submenu-item--active': isMeasureActive('measure-object') }"
-          @click="activateMeasure('object', 'measure-object')"
-        >
-          <BoxIcon :size="18" :stroke-width="1.5" />
-          <span>객체</span>
-        </button>
-        <div class="submenu-divider" />
-        <button class="submenu-item" @click="showSettingsDialog = true; closeSubmenu()">
-          <SettingsIcon :size="18" :stroke-width="1.5" />
-          <span>축척 설정</span>
-        </button>
-        <button class="submenu-item" @click="measureStore.clearMeasurements(); closeSubmenu()">
-          <Trash2Icon :size="18" :stroke-width="1.5" />
-          <span>측정 지우기</span>
+
+        <!-- 측정 설정 -->
+        <button class="measure-menu-item measure-menu-item--full measure-menu-item--settings" @click="showSettingsDialog = true; closeSubmenu()">
+          <div class="measure-menu-icon">
+            <SettingsIcon :size="16" :stroke-width="1.3" />
+          </div>
+          <span class="measure-menu-label">측정 설정</span>
         </button>
       </div>
     </Transition>
@@ -585,6 +646,7 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
       </div>
     </Transition>
   </Teleport>
+  </div>
 </template>
 
 <style scoped>
@@ -593,8 +655,8 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: var(--cad-space-2) 0;
+  gap: 1px;
+  padding: 4px 0;
   background: var(--cad-bg-panel);
   border-right: 1px solid var(--cad-border-default);
   user-select: none;
@@ -614,16 +676,16 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  width: 64px;
-  height: 56px;
+  gap: 2px;
+  width: 56px;
+  height: 44px;
   border-radius: var(--cad-radius-md);
   color: var(--cad-text-secondary);
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
   transition: all var(--cad-transition-fast);
-  padding: 4px 2px;
+  padding: 3px 2px;
 }
 
 .sidebar-item:hover:not(:disabled) {
@@ -643,21 +705,21 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
 }
 
 .sidebar-label {
-  font-size: 9px;
+  font-size: 8px;
   font-weight: var(--cad-font-medium);
-  line-height: 1.1;
+  line-height: 1;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 60px;
+  max-width: 52px;
 }
 
 .sidebar-divider {
-  width: 48px;
+  width: 40px;
   height: 1px;
   background: var(--cad-border-default);
-  margin: 4px 0;
+  margin: 2px 0;
   flex-shrink: 0;
 }
 </style>
@@ -666,21 +728,23 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
 <style>
 .submenu-popover {
   min-width: 180px;
-  background: var(--cad-bg-panel, #27292D);
-  border: 1px solid var(--cad-border-default, #3E4044);
+  /* 항상 다크 테마 — 배경 전환과 무관하게 고정 */
+  background: #27292D;
+  border: 1px solid #3E4044;
   border-radius: 6px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   padding: 4px 0;
+  color-scheme: dark;
 }
 
 .submenu-header {
   padding: 8px 12px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--cad-text-muted, #737373);
+  color: #737373;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--cad-border-default, #3E4044);
+  border-bottom: 1px solid #3E4044;
   margin-bottom: 4px;
 }
 
@@ -691,7 +755,7 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
   width: 100%;
   padding: 8px 12px;
   font-size: 12px;
-  color: var(--cad-text-secondary, #A3A3A3);
+  color: #A3A3A3;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -706,7 +770,7 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
 .submenu-shortcut {
   font-size: 10px;
   font-family: var(--cad-font-mono, 'Consolas', monospace);
-  color: var(--cad-text-muted, #737373);
+  color: #737373;
   padding: 1px 5px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -716,8 +780,8 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
 }
 
 .submenu-item:hover {
-  background: var(--cad-hover-bg, #323539);
-  color: var(--cad-text-primary, #D4D4D4);
+  background: #323539;
+  color: #D4D4D4;
 }
 
 .submenu-item--active {
@@ -727,8 +791,100 @@ const isMeasureActive = (tool: ViewerTool) => store.activeTool === tool
 
 .submenu-divider {
   height: 1px;
-  background: var(--cad-border-default, #3E4044);
+  background: #3E4044;
   margin: 4px 8px;
+}
+
+/* ─── 측정 메뉴 (2열 그리드) ─── */
+.submenu-popover--measure {
+  min-width: 180px;
+  max-width: 200px;
+  padding: 6px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  /* 다크 테마 강제 적용 (배경 전환 시에도 항상 다크) */
+  background: #1E1F22 !important;
+  border-color: #3E4044 !important;
+}
+
+.submenu-popover--measure .submenu-header {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+  border-bottom: 1px solid #3E4044;
+  padding: 3px 6px 6px;
+}
+
+.measure-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: 4px;
+  background: #27292D;
+  border: 1px solid #3E4044;
+  color: #A3A3A3;
+  cursor: pointer;
+  transition: all 100ms ease-out;
+  min-height: 40px;
+}
+
+.measure-menu-item:hover {
+  background: #323539;
+  color: #D4D4D4;
+  border-color: #525660;
+}
+
+.measure-menu-item--active {
+  background: rgba(37, 99, 235, 0.15);
+  color: #60A5FA;
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.measure-menu-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  color: inherit;
+}
+
+.measure-menu-icon svg {
+  color: inherit;
+  width: 28px;
+  height: 22px;
+}
+
+.measure-menu-label {
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.measure-menu-item--full {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px 8px;
+}
+
+.measure-menu-item--settings {
+  margin-top: 2px;
+  border-top: 1px solid #3E4044;
+  border-radius: 0 0 4px 4px;
+  background: #1E1F22;
+}
+
+.submenu-item--danger {
+  color: #EF4444 !important;
+}
+.submenu-item--danger:hover {
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: #F87171 !important;
 }
 
 /* ─── 팝오버 트랜지션 ─── */

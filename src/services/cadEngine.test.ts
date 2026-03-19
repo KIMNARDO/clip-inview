@@ -176,6 +176,7 @@ describe('CadEngine', () => {
       getLayouts: vi.fn().mockReturnValue([]),
       switchLayout: vi.fn().mockReturnValue(true),
       getCurrentLayoutName: vi.fn().mockReturnValue('Model'),
+      resize: vi.fn(),
       dispose: vi.fn(),
     }
 

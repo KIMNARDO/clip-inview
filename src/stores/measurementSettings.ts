@@ -9,13 +9,13 @@ const DEFAULT_SETTINGS: MeasurementSettings = {
   style: {
     textHeight: 14,
     arrowSize: 8,
-    textColor: '#FFEE58',
-    lineColor: '#FFD700',
+    textColor: '#e3f1f1',
+    lineColor: '#e3f1f1',
     lineWidth: 1,
   },
-  length: { unit: 'mm', precision: 2 },
-  area: { unit: 'mm²', precision: 2 },
-  angle: { unit: 'decimal', precision: 1 },
+  length: { unit: 'mm', precision: 4 },
+  area: { unit: 'mm²', precision: 4 },
+  angle: { unit: 'decimal', precision: 2 },
   coordinate: { system: 'world', precision: 4 },
 }
 

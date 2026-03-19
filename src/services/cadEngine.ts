@@ -276,6 +276,11 @@ export class StubCadViewer implements ICadViewer {
 
   setViewMode(_mode: 'select' | 'pan'): void { /* stub */ }
 
+  resize(): void {
+    this._resizeCanvas()
+    this._render()
+  }
+
   // --- Layout ---
   getLayouts(): LayoutInfo[] {
     return this._layouts.map((l) => ({ ...l }))
@@ -562,8 +567,16 @@ export class CadEngine {
     return this._viewer?.getSnapPoint(worldX, worldY, snapTypes) ?? null
   }
 
+  resize(): void {
+    this._viewer?.resize()
+  }
+
   setViewMode(mode: 'select' | 'pan'): void {
     this._viewer?.setViewMode(mode)
+  }
+
+  pan(dx: number, dy: number): void {
+    this._viewer?.pan(dx, dy)
   }
 
   // --- Layout 프록시 ---

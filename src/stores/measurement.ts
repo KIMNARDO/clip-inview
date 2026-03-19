@@ -9,17 +9,19 @@ import {
   calculateArcLength,
 } from '@/utils/measurement'
 import { MeasurementRenderer } from '@/services/measurementRenderer'
+import type { MeasureFormatter, MeasureStyle } from '@/services/measurementRenderer'
 import type { CadEngine } from '@/services/cadEngine'
 
 let nextId = 0
 
+export type AreaSubType = 'triangle' | 'rectangle' | 'polygon'
+
 export const useMeasurementStore = defineStore('measurement', () => {
   const activeMeasureMode = ref<MeasureMode | null>(null)
+  const areaSubType = ref<AreaSubType>('polygon')
   const currentPoints = ref<Point2D[]>([])
   const measurements = ref<MeasurementResult[]>([])
   const cursorPosition = ref<Point2D>({ x: 0, y: 0 })
-  /** 화면 좌표 (커서 툴팁 위치 계산용) */
-  const screenCursorPosition = ref<Point2D>({ x: 0, y: 0 })
 
   const isActive = computed(() => activeMeasureMode.value !== null)
   const lastMeasurement = computed(() =>
@@ -85,10 +87,20 @@ export const useMeasurementStore = defineStore('measurement', () => {
         return pts.length === 0
           ? '시작점을 클릭하세요'
           : '끝점을 클릭하세요'
-      case 'area':
+      case 'area': {
+        const sub = areaSubType.value
         if (pts.length === 0) return '첫 번째 꼭지점을 클릭하세요'
+        if (sub === 'triangle') {
+          return pts.length < 2 ? '다음 꼭지점을 클릭하세요' : '세 번째 꼭지점을 클릭하세요'
+        }
+        if (sub === 'rectangle') {
+          if (pts.length < 3) return '다음 꼭지점을 클릭하세요'
+          return '네 번째 꼭지점을 클릭하세요'
+        }
+        // polygon
         if (pts.length === 1) return '다음 꼭지점을 클릭하세요'
         return '다음 꼭지점 클릭 / 더블클릭으로 완료'
+      }
       case 'angle':
         if (pts.length === 0) return '첫 번째 점을 클릭하세요'
         if (pts.length === 1) return '꼭지점을 클릭하세요'
@@ -117,12 +129,22 @@ export const useMeasurementStore = defineStore('measurement', () => {
     renderer.bind(engine)
   }
 
+  function setFormatter(formatter: MeasureFormatter): void {
+    renderer.setFormatter(formatter)
+  }
+
+  /** 측정 렌더링 스타일 업데이트 */
+  function setStyle(style: Partial<MeasureStyle>): void {
+    renderer.setStyle(style)
+  }
+
   function unbindEngine(): void {
     renderer.unbind()
   }
 
-  function setMeasureMode(mode: MeasureMode | null) {
+  function setMeasureMode(mode: MeasureMode | null, subType?: AreaSubType) {
     activeMeasureMode.value = mode
+    areaSubType.value = subType ?? 'polygon'
     currentPoints.value = []
     renderer.clearPreview()
   }
@@ -137,6 +159,16 @@ export const useMeasurementStore = defineStore('measurement', () => {
       case 'distance':
         if (currentPoints.value.length === 2) completeMeasurement()
         break
+      case 'area': {
+        // 면적 서브타입별 자동 완료
+        const target = areaSubType.value === 'triangle' ? 3
+          : areaSubType.value === 'rectangle' ? 4
+          : 0 // polygon은 더블클릭으로 완료
+        if (target > 0 && currentPoints.value.length === target) {
+          completeMeasurement()
+        }
+        break
+      }
       case 'angle':
         if (currentPoints.value.length === 3) completeMeasurement()
         break
@@ -246,9 +278,9 @@ export const useMeasurementStore = defineStore('measurement', () => {
 
       renderer.clearPreview()
       renderer.renderMeasurement(result)
+      currentPoints.value = []
     }
-
-    currentPoints.value = []
+    // shouldSave가 false면 currentPoints를 유지 (진행 중인 측정 보존)
   }
 
   function cancelMeasurement() {
@@ -274,10 +306,6 @@ export const useMeasurementStore = defineStore('measurement', () => {
     cursorPosition.value = { ...pos }
   }
 
-  function setScreenCursorPosition(pos: Point2D) {
-    screenCursorPosition.value = { ...pos }
-  }
-
   // ─── 실시간 프리뷰 (커서 이동 시) ───
   watch(
     () => [cursorPosition.value.x, cursorPosition.value.y],
@@ -298,16 +326,18 @@ export const useMeasurementStore = defineStore('measurement', () => {
 
   return {
     activeMeasureMode,
+    areaSubType,
     currentPoints,
     measurements,
     cursorPosition,
-    screenCursorPosition,
     isActive,
     lastMeasurement,
     liveValue,
     instructionText,
     bindEngine,
     unbindEngine,
+    setFormatter,
+    setStyle,
     setMeasureMode,
     addPoint,
     completeMeasurement,
@@ -315,7 +345,6 @@ export const useMeasurementStore = defineStore('measurement', () => {
     removeMeasurement,
     clearMeasurements,
     setCursorPosition,
-    setScreenCursorPosition,
     restoreFromSnapshot,
   }
 })

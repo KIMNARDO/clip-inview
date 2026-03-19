@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useMeasurementStore } from '@/stores/measurement'
-import { formatMeasurement } from '@/utils/measurement'
+import { useMeasurementSettingsStore } from '@/stores/measurementSettings'
 import type { Point2D, MeasurementResult } from '@/types/cad'
 
 const props = defineProps<{
@@ -9,13 +9,19 @@ const props = defineProps<{
 }>()
 
 const measureStore = useMeasurementStore()
+const settingsStore = useMeasurementSettingsStore()
 const canvas = ref<HTMLCanvasElement | null>(null)
 let ctx: CanvasRenderingContext2D | null = null
 let resizeObserver: ResizeObserver | null = null
 
-const MEASURE_COLOR = '#FFD700'
-const MEASURE_TEXT_COLOR = '#FFEE58'
-const PREVIEW_COLOR = '#B8960E'
+/** 라벨 색상은 측정 설정의 textColor를 사용 */
+const labelColor = () => settingsStore.settings.style.textColor
+
+/** 고정 화면 폰트 크기 (px) — 모든 측정 라벨이 동일한 크기로 표시 */
+const FIXED_LABEL_FONT_PX = 12
+
+/** RAF 기반 렌더 스로틀링 */
+let rafId: number | null = null
 
 onMounted(() => {
   if (canvas.value) {
@@ -30,6 +36,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   resizeObserver?.disconnect()
+  if (rafId !== null) cancelAnimationFrame(rafId)
 })
 
 function resizeCanvas() {
@@ -40,417 +47,195 @@ function resizeCanvas() {
   canvas.value.height = parent.clientHeight * dpr
   canvas.value.style.width = `${parent.clientWidth}px`
   canvas.value.style.height = `${parent.clientHeight}px`
-  render()
+  renderImmediate()
 }
 
 function toScreen(world: Point2D): Point2D {
-  const viewport = props.getScreenCoords(world.x, world.y)
-  // getScreenCoords는 브라우저 viewport 좌표를 반환하지만,
-  // 오버레이 캔버스는 .viewer-root 내부에 위치하므로 컨테이너 위치를 빼줘야 함
-  const rect = canvas.value?.getBoundingClientRect()
-  if (!rect) return viewport
-  return { x: viewport.x - rect.left, y: viewport.y - rect.top }
+  return props.getScreenCoords(world.x, world.y)
 }
 
+/** 라벨 오프셋 계산용 — 현재 줌의 화면 픽셀/월드 비율 */
+function getPixelsPerWorld(): number {
+  try {
+    const s1 = toScreen({ x: 0, y: 0 })
+    const s2 = toScreen({ x: 100, y: 0 })
+    const ppw = Math.hypot(s2.x - s1.x, s2.y - s1.y) / 100
+    if (!isFinite(ppw) || ppw <= 0) return 1
+    return ppw
+  } catch {
+    return 1
+  }
+}
+
+/** RAF 스로틀 렌더 — 프레임당 최대 1회 */
 function render() {
+  if (rafId !== null) return // 이미 예약됨
+  rafId = requestAnimationFrame(() => {
+    rafId = null
+    renderImmediate()
+  })
+}
+
+/** 실제 렌더링 로직 */
+function renderImmediate() {
   if (!ctx || !canvas.value) return
-  const dpr = window.devicePixelRatio || 1
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  ctx.clearRect(0, 0, canvas.value.width / dpr, canvas.value.height / dpr)
+  try {
+    const dpr = window.devicePixelRatio || 1
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, canvas.value.width / dpr, canvas.value.height / dpr)
 
-  // 완료된 측정 결과 렌더링
-  for (const m of measureStore.measurements) {
-    drawMeasurement(m)
-  }
+    // 완료된 측정 결과 — 치수 라벨 표시
+    for (const m of measureStore.measurements) {
+      drawMeasurementLabel(m)
+    }
 
-  // 진행 중인 측정 렌더링
-  if (measureStore.isActive && measureStore.currentPoints.length > 0) {
-    const pts = [...measureStore.currentPoints, measureStore.cursorPosition]
-    drawPreview(measureStore.activeMeasureMode!, pts)
+    // 진행 중인 측정 — 실시간 값 표시 (커서 근처, 고정 10px)
+    if (measureStore.isActive && measureStore.currentPoints.length > 0 && measureStore.liveValue) {
+      const live = measureStore.liveValue
+      let text: string
+      if (live.unit === '°') text = settingsStore.formatAngle(live.value)
+      else if (live.unit === 'mm²') text = settingsStore.formatArea(live.value)
+      else text = settingsStore.formatLength(live.value)
+
+      const cursorScreen = toScreen(measureStore.cursorPosition)
+      drawLabelFixed(text, cursorScreen.x + 18, cursorScreen.y - 8, 10)
+    }
+  } catch (err) {
+    console.warn('[MeasurementOverlay] render error:', err)
   }
 }
 
-// ─── 완료된 측정 결과 그리기 ───
+/** 완료된 측정의 치수 라벨을 측정 좌표 위에 표시 */
+function drawMeasurementLabel(m: MeasurementResult) {
+  const pos = getLabelPosition(m)
+  if (!pos) return
+  const screen = toScreen(pos)
+  const text = formatMeasurementValue(m)
+  drawLabelFixed(text, screen.x, screen.y, FIXED_LABEL_FONT_PX)
+}
 
-function drawMeasurement(m: MeasurementResult) {
-  if (!ctx) return
+/** 측정 유형별 라벨 위치 계산 (월드 좌표) */
+function getLabelPosition(m: MeasurementResult): Point2D | null {
+  switch (m.type) {
+    case 'distance': {
+      if (m.points.length < 2) return null
+      const p1 = m.points[0]!
+      const p2 = m.points[1]!
+      const mx = (p1.x + p2.x) / 2
+      const my = (p1.y + p2.y) / 2
+      const dx = p2.x - p1.x
+      const dy = p2.y - p1.y
+      const len = Math.hypot(dx, dy)
+      const nx = len > 0 ? -dy / len : 0
+      const ny = len > 0 ? dx / len : 1
+      // 고정 픽셀 오프셋을 월드 좌표로 변환
+      const worldOffset = FIXED_LABEL_FONT_PX * 1.5 / getPixelsPerWorld()
+      return { x: mx + nx * worldOffset, y: my + ny * worldOffset }
+    }
+    case 'area': {
+      if (m.points.length < 3) return null
+      const cx = m.points.reduce((s, p) => s + p.x, 0) / m.points.length
+      const cy = m.points.reduce((s, p) => s + p.y, 0) / m.points.length
+      return { x: cx, y: cy }
+    }
+    case 'angle': {
+      if (m.points.length < 3) return null
+      const vertex = m.points[1]!
+      const p1 = m.points[0]!
+      const p2 = m.points[2]!
+      const a1 = Math.atan2(p1.y - vertex.y, p1.x - vertex.x)
+      const a2 = Math.atan2(p2.y - vertex.y, p2.x - vertex.x)
+      const bisect = (a1 + a2) / 2
+      const worldOffset = FIXED_LABEL_FONT_PX * 3 / getPixelsPerWorld()
+      return { x: vertex.x + Math.cos(bisect) * worldOffset, y: vertex.y + Math.sin(bisect) * worldOffset }
+    }
+    case 'coordinate': {
+      if (m.points.length < 1) return null
+      const pt = m.points[0]!
+      const worldOffset = FIXED_LABEL_FONT_PX * 1.5 / getPixelsPerWorld()
+      return { x: pt.x + worldOffset, y: pt.y + worldOffset }
+    }
+    case 'arc-length': {
+      if (m.points.length < 3) return null
+      const mid = m.points[1]!
+      const worldOffset = FIXED_LABEL_FONT_PX * 1.5 / getPixelsPerWorld()
+      return { x: mid.x + worldOffset, y: mid.y + worldOffset }
+    }
+    case 'point-to-line': {
+      if (m.points.length < 3) return null
+      const point = m.points[2]!
+      const projection = m.auxiliary?.projection ?? point
+      return { x: (point.x + projection.x) / 2, y: (point.y + projection.y) / 2 }
+    }
+    default:
+      return null
+  }
+}
 
+/** 측정 결과를 포맷팅된 문자열로 변환 */
+function formatMeasurementValue(m: MeasurementResult): string {
   switch (m.type) {
     case 'distance':
-      if (m.points.length >= 2) drawDistance(m.points[0]!, m.points[1]!, m.value, m.unit)
-      break
-    case 'area':
-      if (m.points.length >= 3) drawArea(m.points, m.value, m.unit)
-      break
-    case 'angle':
-      if (m.points.length >= 3) drawAngle(m.points[0]!, m.points[1]!, m.points[2]!, m.value, m.unit)
-      break
-    case 'coordinate':
-      if (m.points.length >= 1) drawCoordinate(m.points[0]!)
-      break
     case 'arc-length':
-      if (m.points.length >= 3) drawArcLength(m.points[0]!, m.points[1]!, m.points[2]!, m.value, m.unit, m.auxiliary)
-      break
     case 'point-to-line':
-      if (m.points.length >= 3) drawPointToLine(m.points[0]!, m.points[1]!, m.points[2]!, m.value, m.unit, m.auxiliary)
-      break
+      return settingsStore.formatLength(m.value)
+    case 'area':
+      return settingsStore.formatArea(m.value)
+    case 'angle':
+      return settingsStore.formatAngle(m.value)
+    case 'coordinate': {
+      if (m.points.length < 1) return ''
+      const pt = m.points[0]!
+      return settingsStore.formatCoordinate(pt.x, pt.y)
+    }
+    default:
+      return `${m.value.toFixed(2)} ${m.unit}`
   }
 }
 
-function drawDistance(p1: Point2D, p2: Point2D, value: number, unit: string) {
-  if (!ctx) return
-  const s1 = toScreen(p1)
-  const s2 = toScreen(p2)
+/** 고정 폰트 크기로 라벨 렌더링 */
+function drawLabelFixed(text: string, x: number, y: number, fontSize: number) {
+  if (!ctx || !canvas.value) return
+  const dpr = window.devicePixelRatio || 1
+  const cw = canvas.value.width / dpr
+  const ch = canvas.value.height / dpr
 
-  // 측정선
-  ctx.strokeStyle = MEASURE_COLOR
-  ctx.lineWidth = 2
-  ctx.setLineDash([])
-  ctx.beginPath()
-  ctx.moveTo(s1.x, s1.y)
-  ctx.lineTo(s2.x, s2.y)
-  ctx.stroke()
-
-  drawMarker(s1)
-  drawMarker(s2)
-
-  // 수치 텍스트 — 선분 중점
-  const midX = (s1.x + s2.x) / 2
-  const midY = (s1.y + s2.y) / 2
-  // 선에 수직 방향으로 오프셋
-  const dx = s2.x - s1.x
-  const dy = s2.y - s1.y
-  const len = Math.hypot(dx, dy)
-  const nx = len > 0 ? -dy / len : 0
-  const ny = len > 0 ? dx / len : 1
-  drawLabel(formatMeasurement(value, unit), midX + nx * 16, midY + ny * 16)
-}
-
-function drawArea(points: Point2D[], value: number, unit: string) {
-  if (!ctx) return
-  const screenPts = points.map(toScreen)
-
-  // 반투명 채우기
-  ctx.fillStyle = 'rgba(255, 215, 0, 0.1)'
-  ctx.strokeStyle = MEASURE_COLOR
-  ctx.lineWidth = 1.5
-  ctx.setLineDash([6, 3])
-
-  ctx.beginPath()
-  ctx.moveTo(screenPts[0]!.x, screenPts[0]!.y)
-  for (let i = 1; i < screenPts.length; i++) {
-    ctx.lineTo(screenPts[i]!.x, screenPts[i]!.y)
-  }
-  ctx.closePath()
-  ctx.fill()
-  ctx.stroke()
-  ctx.setLineDash([])
-
-  for (const sp of screenPts) drawMarker(sp)
-
-  const cx = screenPts.reduce((s, p) => s + p.x, 0) / screenPts.length
-  const cy = screenPts.reduce((s, p) => s + p.y, 0) / screenPts.length
-  drawLabel(formatMeasurement(value, unit), cx, cy)
-}
-
-function drawAngle(p1: Point2D, vertex: Point2D, p2: Point2D, value: number, unit: string) {
-  if (!ctx) return
-  const s1 = toScreen(p1)
-  const sv = toScreen(vertex)
-  const s2 = toScreen(p2)
-
-  ctx.strokeStyle = MEASURE_COLOR
-  ctx.lineWidth = 2
-  ctx.setLineDash([])
-  ctx.beginPath()
-  ctx.moveTo(s1.x, s1.y)
-  ctx.lineTo(sv.x, sv.y)
-  ctx.lineTo(s2.x, s2.y)
-  ctx.stroke()
-
-  // 호
-  const angle1 = Math.atan2(s1.y - sv.y, s1.x - sv.x)
-  const angle2 = Math.atan2(s2.y - sv.y, s2.x - sv.x)
-  const radius = 30
-  ctx.strokeStyle = MEASURE_TEXT_COLOR
-  ctx.lineWidth = 1.5
-  ctx.beginPath()
-  ctx.arc(sv.x, sv.y, radius, angle1, angle2, false)
-  ctx.stroke()
-
-  drawMarker(s1)
-  drawMarker(sv)
-  drawMarker(s2)
-
-  const labelAngle = (angle1 + angle2) / 2
-  drawLabel(`${value.toFixed(1)}${unit}`, sv.x + (radius + 18) * Math.cos(labelAngle), sv.y + (radius + 18) * Math.sin(labelAngle))
-}
-
-function drawCoordinate(point: Point2D) {
-  if (!ctx) return
-  const sp = toScreen(point)
-  drawMarker(sp)
-  drawLabel(`(${point.x.toFixed(2)}, ${point.y.toFixed(2)})`, sp.x + 14, sp.y - 14)
-}
-
-function drawArcLength(p1: Point2D, p2: Point2D, p3: Point2D, value: number, unit: string, auxiliary?: MeasurementResult['auxiliary']) {
-  if (!ctx) return
-  const s1 = toScreen(p1)
-  const s2 = toScreen(p2)
-  const s3 = toScreen(p3)
-
-  if (auxiliary?.arcCenter && auxiliary.arcRadius) {
-    const sCenter = toScreen(auxiliary.arcCenter)
-    // 화면 좌표에서 반지름 계산 (월드→스크린 비율 적용)
-    const sRadius = Math.hypot(s1.x - sCenter.x, s1.y - sCenter.y)
-
-    const sa = Math.atan2(s1.y - sCenter.y, s1.x - sCenter.x)
-    const ma = Math.atan2(s2.y - sCenter.y, s2.x - sCenter.x)
-    const ea = Math.atan2(s3.y - sCenter.y, s3.x - sCenter.x)
-
-    // 경유점을 포함하는 방향 결정
-    function norm(a: number): number { while (a < 0) a += 2 * Math.PI; while (a >= 2 * Math.PI) a -= 2 * Math.PI; return a }
-    const sweep = norm(ea - sa)
-    const midInSweep = norm(ma - sa) <= sweep
-    const counterclockwise = !midInSweep
-
-    ctx.strokeStyle = MEASURE_COLOR
-    ctx.lineWidth = 2
-    ctx.setLineDash([])
-    ctx.beginPath()
-    ctx.arc(sCenter.x, sCenter.y, sRadius, sa, ea, counterclockwise)
-    ctx.stroke()
-  } else {
-    // 호 정보 없을 때 직선 연결 대체
-    ctx.strokeStyle = MEASURE_COLOR
-    ctx.lineWidth = 2
-    ctx.setLineDash([])
-    ctx.beginPath()
-    ctx.moveTo(s1.x, s1.y)
-    ctx.lineTo(s2.x, s2.y)
-    ctx.lineTo(s3.x, s3.y)
-    ctx.stroke()
-  }
-
-  drawMarker(s1)
-  drawMarker(s2)
-  drawMarker(s3)
-
-  // 호 중점(경유점 근처)에 수치 표시
-  drawLabel(formatMeasurement(value, unit), s2.x + 14, s2.y - 14)
-}
-
-function drawPointToLine(lineStart: Point2D, lineEnd: Point2D, point: Point2D, value: number, unit: string, auxiliary?: MeasurementResult['auxiliary']) {
-  if (!ctx) return
-  const sStart = toScreen(lineStart)
-  const sEnd = toScreen(lineEnd)
-  const sPoint = toScreen(point)
-  const projection = auxiliary?.projection ?? point
-  const sProj = toScreen(projection)
-
-  // 기준 선분
-  ctx.strokeStyle = MEASURE_COLOR
-  ctx.lineWidth = 2
-  ctx.setLineDash([])
-  ctx.beginPath()
-  ctx.moveTo(sStart.x, sStart.y)
-  ctx.lineTo(sEnd.x, sEnd.y)
-  ctx.stroke()
-
-  // 수선
-  ctx.strokeStyle = MEASURE_COLOR
-  ctx.lineWidth = 1.5
-  ctx.setLineDash([4, 3])
-  ctx.beginPath()
-  ctx.moveTo(sPoint.x, sPoint.y)
-  ctx.lineTo(sProj.x, sProj.y)
-  ctx.stroke()
-  ctx.setLineDash([])
-
-  drawMarker(sStart)
-  drawMarker(sEnd)
-  drawMarker(sPoint)
-
-  const midX = (sPoint.x + sProj.x) / 2
-  const midY = (sPoint.y + sProj.y) / 2
-  drawLabel(formatMeasurement(value, unit), midX + 14, midY - 10)
-}
-
-// ─── 프리뷰 (진행 중인 측정) ───
-
-function drawPreview(type: string, points: Point2D[]) {
-  if (!ctx) return
-
-  ctx.strokeStyle = PREVIEW_COLOR
-  ctx.lineWidth = 1
-  ctx.setLineDash([5, 4])
-
-  switch (type) {
-    case 'distance':
-      if (points.length >= 2) {
-        const s1 = toScreen(points[0]!)
-        const s2 = toScreen(points[points.length - 1]!)
-        ctx.beginPath()
-        ctx.moveTo(s1.x, s1.y)
-        ctx.lineTo(s2.x, s2.y)
-        ctx.stroke()
-        drawMarker(s1, true)
-        drawMarker(s2, true)
-        // 실시간 거리
-        if (measureStore.liveValue) {
-          const mx = (s1.x + s2.x) / 2
-          const my = (s1.y + s2.y) / 2
-          drawLabel(formatMeasurement(measureStore.liveValue.value, measureStore.liveValue.unit), mx, my - 14, true)
-        }
-      }
-      break
-
-    case 'area': {
-      if (points.length < 2) break
-      const screenPts = points.map(toScreen)
-      ctx.beginPath()
-      ctx.moveTo(screenPts[0]!.x, screenPts[0]!.y)
-      for (let i = 1; i < screenPts.length; i++) {
-        ctx.lineTo(screenPts[i]!.x, screenPts[i]!.y)
-      }
-      ctx.closePath()
-      ctx.stroke()
-      for (const sp of screenPts) drawMarker(sp, true)
-      if (measureStore.liveValue && points.length >= 3) {
-        const cx = screenPts.reduce((s, p) => s + p.x, 0) / screenPts.length
-        const cy = screenPts.reduce((s, p) => s + p.y, 0) / screenPts.length
-        drawLabel(formatMeasurement(measureStore.liveValue.value, measureStore.liveValue.unit), cx, cy, true)
-      }
-      break
-    }
-
-    case 'angle': {
-      const screenPts = points.map(toScreen)
-      if (screenPts.length >= 2) {
-        ctx.beginPath()
-        ctx.moveTo(screenPts[0]!.x, screenPts[0]!.y)
-        ctx.lineTo(screenPts[1]!.x, screenPts[1]!.y)
-        ctx.stroke()
-      }
-      if (screenPts.length >= 3) {
-        ctx.beginPath()
-        ctx.moveTo(screenPts[1]!.x, screenPts[1]!.y)
-        ctx.lineTo(screenPts[2]!.x, screenPts[2]!.y)
-        ctx.stroke()
-      }
-      for (const sp of screenPts) drawMarker(sp, true)
-      if (measureStore.liveValue && points.length >= 3) {
-        const sv = screenPts[1]!
-        drawLabel(`${measureStore.liveValue.value.toFixed(1)}${measureStore.liveValue.unit}`, sv.x + 40, sv.y - 10, true)
-      }
-      break
-    }
-
-    case 'arc-length': {
-      const screenPts = points.map(toScreen)
-      // 세 점을 직선으로 연결하여 프리뷰
-      if (screenPts.length >= 2) {
-        ctx.beginPath()
-        ctx.moveTo(screenPts[0]!.x, screenPts[0]!.y)
-        ctx.lineTo(screenPts[1]!.x, screenPts[1]!.y)
-        ctx.stroke()
-      }
-      if (screenPts.length >= 3) {
-        ctx.beginPath()
-        ctx.moveTo(screenPts[1]!.x, screenPts[1]!.y)
-        ctx.lineTo(screenPts[2]!.x, screenPts[2]!.y)
-        ctx.stroke()
-      }
-      for (const sp of screenPts) drawMarker(sp, true)
-      if (measureStore.liveValue && screenPts.length >= 3) {
-        const sv = screenPts[1]!
-        drawLabel(formatMeasurement(measureStore.liveValue.value, measureStore.liveValue.unit), sv.x + 14, sv.y - 14, true)
-      }
-      break
-    }
-
-    case 'point-to-line': {
-      const screenPts = points.map(toScreen)
-      if (screenPts.length >= 2) {
-        ctx.beginPath()
-        ctx.moveTo(screenPts[0]!.x, screenPts[0]!.y)
-        ctx.lineTo(screenPts[1]!.x, screenPts[1]!.y)
-        ctx.stroke()
-      }
-      if (screenPts.length >= 3) {
-        ctx.beginPath()
-        ctx.moveTo(screenPts[1]!.x, screenPts[1]!.y)
-        ctx.lineTo(screenPts[2]!.x, screenPts[2]!.y)
-        ctx.stroke()
-      }
-      for (const sp of screenPts) drawMarker(sp, true)
-      if (measureStore.liveValue && screenPts.length >= 3) {
-        const mx = (screenPts[1]!.x + screenPts[2]!.x) / 2
-        const my = (screenPts[1]!.y + screenPts[2]!.y) / 2
-        drawLabel(formatMeasurement(measureStore.liveValue.value, measureStore.liveValue.unit), mx + 12, my - 10, true)
-      }
-      break
-    }
-  }
-
-  ctx.setLineDash([])
-}
-
-// ─── 공통 유틸 ───
-
-function drawMarker(p: Point2D, isPreview = false) {
-  if (!ctx) return
-  const size = 5
-  ctx.strokeStyle = isPreview ? PREVIEW_COLOR : MEASURE_COLOR
-  ctx.lineWidth = isPreview ? 1 : 1.5
-  ctx.setLineDash([])
-  // 십자 마커
-  ctx.beginPath()
-  ctx.moveTo(p.x - size, p.y)
-  ctx.lineTo(p.x + size, p.y)
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.moveTo(p.x, p.y - size)
-  ctx.lineTo(p.x, p.y + size)
-  ctx.stroke()
-}
-
-function drawLabel(text: string, x: number, y: number, isPreview = false) {
-  if (!ctx) return
-  ctx.font = `${isPreview ? '500' : '600'} 12px "JetBrains Mono", "Cascadia Code", monospace`
+  const fs = Math.round(Math.max(1, fontSize))
+  ctx.font = `${fs}px "JetBrains Mono", "Cascadia Code", monospace`
   const metrics = ctx.measureText(text)
-  const padding = 4
+  const padding = Math.max(1, fs * 0.2)
   const w = metrics.width + padding * 2
-  const h = 16 + padding * 2
+  const h = fs + padding * 2
 
-  // 배경
-  ctx.fillStyle = isPreview ? 'rgba(20, 20, 20, 0.75)' : 'rgba(20, 20, 20, 0.9)'
-  const rx = 3
-  const bx = x - w / 2
-  const by = y - h / 2
+  // 화면 밖으로 넘어가지 않도록 클램핑
+  const margin = 2
+  const lx = Math.max(margin + w / 2, Math.min(cw - margin - w / 2, x))
+  const ly = Math.max(margin + h / 2, Math.min(ch - margin - h / 2, y))
+
+  // 배경 (반투명 다크)
+  ctx.fillStyle = 'rgba(16, 20, 24, 0.75)'
   ctx.beginPath()
-  ctx.roundRect(bx, by, w, h, rx)
+  ctx.roundRect(lx - w / 2, ly - h / 2, w, h, Math.min(3, fs * 0.2))
   ctx.fill()
 
-  // 텍스트
-  ctx.fillStyle = isPreview ? PREVIEW_COLOR : MEASURE_TEXT_COLOR
+  // 텍스트 (선 색상과 동일)
+  ctx.fillStyle = labelColor()
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(text, x, y)
+  ctx.fillText(text, lx, ly)
 }
 
-// 상태 변경 시 재렌더링
+// 커서 이동 및 측정 결과 변경 시 재렌더링 (RAF로 자동 스로틀)
 watch(
   () => [
-    measureStore.measurements.length,
     measureStore.currentPoints.length,
     measureStore.cursorPosition.x,
     measureStore.cursorPosition.y,
+    measureStore.measurements.length,
   ],
   () => render(),
 )
 
-// Pan/Zoom 시 재렌더링을 위해 외부에서 호출
 defineExpose({ render, resizeCanvas })
 </script>
 

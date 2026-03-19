@@ -1,9 +1,24 @@
 <script setup lang="ts">
 import { useMeasurementStore } from '@/stores/measurement'
-import { formatMeasurement } from '@/utils/measurement'
+import { useMeasurementSettingsStore } from '@/stores/measurementSettings'
 import { XIcon } from 'lucide-vue-next'
 
 const measureStore = useMeasurementStore()
+const settingsStore = useMeasurementSettingsStore()
+
+function formatValue(m: { type: string; value: number; unit: string; points: { x: number; y: number }[] }): string {
+  if (m.type === 'coordinate' && m.points.length > 0) {
+    return settingsStore.formatCoordinate(m.points[0]!.x, m.points[0]!.y)
+  }
+  if (m.unit === '°') {
+    return settingsStore.formatAngle(m.value)
+  }
+  if (m.unit === 'mm²') {
+    return settingsStore.formatArea(m.value)
+  }
+  // distance, arc-length, point-to-line (mm 기반)
+  return settingsStore.formatLength(m.value)
+}
 
 function removeMeasurement(id: string) {
   measureStore.removeMeasurement(id)
@@ -21,9 +36,7 @@ function removeMeasurement(id: string) {
         {{ { distance: '거리', area: '면적', angle: '각도', coordinate: '좌표', 'arc-length': '호 길이', 'point-to-line': '점-선', object: '객체' }[m.type] ?? m.type }}
       </span>
       <span class="measure-badge-value">
-        {{ m.type === 'coordinate' && m.points.length > 0
-          ? `(${m.points[0]!.x.toFixed(2)}, ${m.points[0]!.y.toFixed(2)})`
-          : formatMeasurement(m.value, m.unit) }}
+        {{ formatValue(m) }}
       </span>
       <button
         class="measure-badge-close"
